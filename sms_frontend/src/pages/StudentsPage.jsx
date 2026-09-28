@@ -95,12 +95,12 @@ export default function StudentsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 'var(--font-xl)', fontWeight: 600, color: 'var(--color-gray-900)' }}>
+          <h1 className="page-title">
             Students
           </h1>
-          <p style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-500)', marginTop: '4px' }}>
+          <p className="page-subtitle">
             {totalCount} student{totalCount !== 1 ? 's' : ''} registered
           </p>
         </div>

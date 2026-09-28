@@ -53,8 +53,13 @@ export default function Sidebar({ isOpen, onClose }) {
       {isOpen && <div className="modal-overlay" style={{ zIndex: 99 }} onClick={onClose} />}
       <aside className={`sidebar${isOpen ? ' open' : ''}`}>
         <div className="sidebar-brand">
-          <h1>College SMS</h1>
-          <span>Student Management System</span>
+          <div>
+            <h1>College SMS</h1>
+            <span>Student Management System</span>
+          </div>
+          <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">
+            &times;
+          </button>
         </div>
 
         <nav className="sidebar-nav">

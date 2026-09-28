@@ -11,26 +11,23 @@ export default function Layout() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-content">
         <header className="main-header">
-          <button
-            className="btn-icon btn-ghost"
-            onClick={() => setSidebarOpen(true)}
-            style={{ display: 'none' }}
-            id="mobile-menu-btn"
-          >
-            <IconMenu />
-          </button>
-          <div />
+          <div className="main-header-left">
+            <button
+              className="btn-icon btn-ghost mobile-menu-toggle"
+              onClick={() => setSidebarOpen(true)}
+              id="mobile-menu-btn"
+              aria-label="Open menu"
+            >
+              <IconMenu />
+            </button>
+            <div className="mobile-brand-title">College SMS</div>
+          </div>
           <div className="main-header-actions" />
         </header>
         <div className="page-content page-enter">
           <Outlet />
         </div>
       </div>
-      <style>{`
-        @media (max-width: 768px) {
-          #mobile-menu-btn { display: flex !important; }
-        }
-      `}</style>
     </div>
   )
 }

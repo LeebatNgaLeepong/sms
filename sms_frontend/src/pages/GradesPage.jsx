@@ -131,12 +131,12 @@ export default function GradesPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 'var(--font-xl)', fontWeight: 600, color: 'var(--color-gray-900)' }}>
+          <h1 className="page-title">
             Grades
           </h1>
-          <p style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-500)', marginTop: '4px' }}>
+          <p className="page-subtitle">
             {totalCount} grade record{totalCount !== 1 ? 's' : ''}
           </p>
         </div>
