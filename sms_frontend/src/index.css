@@ -133,23 +133,18 @@ table {
   width: 100%;
 }
 
-/* --- Scrollbar --- */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Table container scroll behavior */
+.table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-gray-300);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-400);
+.table-container::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+  width: 0;
+  height: 0;
 }
 
 /* ============================================================
@@ -1167,7 +1162,8 @@ table {
 }
 
 /* ============================================================
-/* Page headers */
+   PAGE HEADERS
+   ============================================================ */
 .page-header {
   display: flex;
   justify-content: space-between;
