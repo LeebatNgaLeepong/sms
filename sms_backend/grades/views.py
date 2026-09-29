@@ -17,14 +17,18 @@ class GradeFilter(django_filters.FilterSet):
     Custom filter to support filtering grades by:
       - ?student=STU-10001 (student ID)
       - ?subject=1 or ?subject=CS101 (subject ID or course code)
+      - ?teacher=1 (teacher/instructor user ID)
+      - ?year_level=1st+Year (student year level)
     """
 
     student = django_filters.CharFilter(field_name='student__id', lookup_expr='iexact')
     subject = django_filters.CharFilter(method='filter_subject')
+    teacher = django_filters.NumberFilter(field_name='subject__instructor__id')
+    year_level = django_filters.CharFilter(field_name='student__year_level', lookup_expr='iexact')
 
     class Meta:
         model = Grade
-        fields = ['student', 'subject']
+        fields = ['student', 'subject', 'teacher', 'year_level']
 
     def filter_subject(self, queryset, name, value):
         if value.isdigit():

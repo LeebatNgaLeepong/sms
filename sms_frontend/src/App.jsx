@@ -9,6 +9,7 @@ import StudentsPage from './pages/StudentsPage'
 import StudentDetailPage from './pages/StudentDetailPage'
 import SubjectsPage from './pages/SubjectsPage'
 import GradesPage from './pages/GradesPage'
+import TeachersPage from './pages/TeachersPage'
 
 function AppRoutes() {
   const { user } = useAuth()
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route path="/students" element={<StudentsPage />} />
         <Route path="/students/:id" element={<StudentDetailPage />} />
         <Route path="/subjects" element={<SubjectsPage />} />
+        <Route path="/teachers" element={<TeachersPage />} />
         <Route path="/grades" element={<GradesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

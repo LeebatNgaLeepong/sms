@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import StudentPermission
+from subjects.models import Subject
 from .models import Student
 from .serializers import StudentSerializer
 
@@ -20,6 +21,8 @@ class StudentViewSet(viewsets.ModelViewSet):
     - GET /api/students/{id}/ : Retrieve a student record (Admin, Teacher, or the Student themselves)
     - PUT/PATCH/DELETE /api/students/{id}/ : Update or remove student (Admin only)
     - GET /api/students/{id}/grades/ : View all grades + computed GPA for this student
+    - GET /api/students/{id}/enrolled/ : View subjects this student is enrolled in
+    - POST /api/students/{id}/enroll/ : Enroll student in subjects (Admin only)
     """
 
     serializer_class = StudentSerializer
@@ -32,7 +35,7 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        base_qs = Student.objects.select_related('user').all()
+        base_qs = Student.objects.select_related('user').prefetch_related('enrolled_subjects').all()
 
         if not user.is_authenticated:
             return base_qs.none()
@@ -87,3 +90,51 @@ class StudentViewSet(viewsets.ModelViewSet):
         }
 
         return Response(response_payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='enrolled')
+    def enrolled(self, request, pk=None):
+        """
+        GET /api/students/{id}/enrolled/
+        Returns subjects the student is currently enrolled in.
+        """
+        student = self.get_object()
+        subjects = student.enrolled_subjects.select_related('instructor').all()
+        data = [
+            {
+                'id': s.id,
+                'code': s.code,
+                'name': s.name,
+                'units': s.units,
+                'instructor_name': (
+                    f"{s.instructor.first_name} {s.instructor.last_name}".strip()
+                    or s.instructor.username
+                ) if s.instructor else None,
+            }
+            for s in subjects
+        ]
+        return Response({'student_id': student.id, 'enrolled_subjects': data})
+
+    @action(detail=True, methods=['post', 'put'], url_path='enroll')
+    def enroll(self, request, pk=None):
+        """
+        POST/PUT /api/students/{id}/enroll/
+        Body: {"subject_ids": [1, 2, 3]}
+        Replaces the student's enrolled subjects with the given list.
+        Admin-only.
+        """
+        if request.user.role not in ['admin'] and not request.user.is_superuser:
+            return Response({'detail': 'Only admins can modify enrollments.'}, status=403)
+
+        student = self.get_object()
+        subject_ids = request.data.get('subject_ids', [])
+
+        try:
+            subjects = Subject.objects.filter(id__in=subject_ids)
+            student.enrolled_subjects.set(subjects)
+            return Response({
+                'student_id': student.id,
+                'enrolled_count': subjects.count(),
+                'detail': 'Enrollment updated successfully.',
+            })
+        except Exception as e:
+            return Response({'detail': str(e)}, status=400)

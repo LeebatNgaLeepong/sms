@@ -18,6 +18,11 @@ export default function GradesPage() {
 
   const [students, setStudents] = useState([])
   const [subjects, setSubjects] = useState([])
+  const [teachers, setTeachers] = useState([])
+
+  const [filterSubject, setFilterSubject] = useState('')
+  const [filterTeacher, setFilterTeacher] = useState('')
+  const [filterYear, setFilterYear] = useState('')
 
   const { isAdmin, isTeacher, isStudent } = useAuth()
   const { addToast } = useToast()
@@ -26,19 +31,20 @@ export default function GradesPage() {
 
   useEffect(() => {
     fetchGrades()
-  }, [page])
+  }, [page, filterSubject, filterTeacher, filterYear])
 
   useEffect(() => {
-    if (canModify) {
-      fetchDropdownData()
-    }
-  }, [canModify])
+    fetchDropdownData()
+  }, [])
 
   const fetchGrades = async () => {
     setLoading(true)
     try {
       const params = { page }
       if (search) params.student = search
+      if (filterSubject) params.subject = filterSubject
+      if (filterTeacher) params.teacher = filterTeacher
+      if (filterYear) params.year_level = filterYear
       const res = await api.get('/grades/', { params })
       setGrades(res.data.results || res.data)
       setTotalCount(res.data.count || 0)
@@ -51,15 +57,25 @@ export default function GradesPage() {
 
   const fetchDropdownData = async () => {
     try {
-      const [studentsRes, subjectsRes] = await Promise.all([
+      const [studentsRes, subjectsRes, teachersRes] = await Promise.all([
         api.get('/students/', { params: { page_size: 100 } }),
         api.get('/subjects/', { params: { page_size: 100 } }),
+        api.get('/teachers/'),
       ])
       setStudents(studentsRes.data.results || studentsRes.data)
       setSubjects(subjectsRes.data.results || subjectsRes.data)
+      setTeachers(teachersRes.data)
     } catch (err) {
       console.error('Dropdown data fetch error:', err)
     }
+  }
+
+  const clearFilters = () => {
+    setSearch('')
+    setFilterSubject('')
+    setFilterTeacher('')
+    setFilterYear('')
+    setPage(1)
   }
 
   const openCreate = () => {
@@ -163,6 +179,56 @@ export default function GradesPage() {
           <button className="btn btn-secondary btn-sm" onClick={handleSearch}>
             Filter
           </button>
+        </div>
+
+        <div className="filter-row">
+          <span className="filter-label">Filter By:</span>
+          <select
+            className="filter-select"
+            value={filterSubject}
+            onChange={(e) => { setFilterSubject(e.target.value); setPage(1); }}
+            aria-label="Filter by Subject"
+          >
+            <option value="">All Subjects</option>
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.code} - {s.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="filter-select"
+            value={filterTeacher}
+            onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}
+            aria-label="Filter by Teacher"
+          >
+            <option value="">All Teachers</option>
+            {teachers.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.first_name ? `${t.first_name} ${t.last_name}` : t.username}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="filter-select"
+            value={filterYear}
+            onChange={(e) => { setFilterYear(e.target.value); setPage(1); }}
+            aria-label="Filter by Year Level"
+          >
+            <option value="">All Year Levels</option>
+            <option value="1st Year">1st Year</option>
+            <option value="2nd Year">2nd Year</option>
+            <option value="3rd Year">3rd Year</option>
+            <option value="4th Year">4th Year</option>
+          </select>
+
+          {(search || filterSubject || filterTeacher || filterYear) && (
+            <button className="btn btn-ghost btn-sm" onClick={clearFilters}>
+              Reset Filters
+            </button>
+          )}
         </div>
 
         {loading ? (

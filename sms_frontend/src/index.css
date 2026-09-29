@@ -133,18 +133,21 @@ table {
   width: 100%;
 }
 
+/* Hide scrollbars on mobile while keeping scroll functionality */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+  width: 0;
+  height: 0;
+}
+
 /* Table container scroll behavior */
 .table-container {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none;  /* IE and Edge */
-}
-
-.table-container::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-  width: 0;
-  height: 0;
 }
 
 /* ============================================================
@@ -699,6 +702,82 @@ table {
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-gray-200);
   gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-gray-100);
+  background: var(--color-gray-50);
+  align-items: center;
+}
+
+.filter-select {
+  height: 34px;
+  padding: 0 var(--space-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  color: var(--color-gray-700);
+  cursor: pointer;
+  outline: none;
+  min-width: 130px;
+}
+
+.filter-select:focus {
+  border-color: var(--color-red-500);
+}
+
+.filter-label {
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--color-gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Subject multi-enrollment chips */
+.subject-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--color-white);
+}
+
+.subject-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 9999px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--color-gray-200);
+  background: var(--color-gray-50);
+  color: var(--color-gray-600);
+  transition: all var(--transition-fast);
+}
+
+.subject-chip:hover {
+  border-color: var(--color-red-400);
+  color: var(--color-red-600);
+}
+
+.subject-chip.selected {
+  background: var(--color-red-100);
+  border-color: var(--color-red-500);
+  color: var(--color-red-700);
 }
 
 .table-search {

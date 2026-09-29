@@ -64,6 +64,12 @@ class Student(models.Model):
         max_length=50,
         help_text="Current academic year (e.g., 1st Year, 2nd Year).",
     )
+    enrolled_subjects = models.ManyToManyField(
+        'subjects.Subject',
+        blank=True,
+        related_name='enrolled_students',
+        help_text="Subjects this student is currently enrolled in.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

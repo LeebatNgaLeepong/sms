@@ -1,26 +1,87 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api'
-import { IconChevronLeft } from '../components/Icons'
+import { IconChevronLeft, IconPlus, IconEdit } from '../components/Icons'
+import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
+import Modal from '../components/Modal'
 
 export default function StudentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { isAdmin } = useAuth()
+  const { addToast } = useToast()
+
   const [data, setData] = useState(null)
+  const [enrolledSubjects, setEnrolledSubjects] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // Enrollment modal state
+  const [showEnrollModal, setShowEnrollModal] = useState(false)
+  const [allSubjects, setAllSubjects] = useState([])
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState([])
+  const [savingEnrollment, setSavingEnrollment] = useState(false)
+  const [loadingSubjects, setLoadingSubjects] = useState(false)
+
   useEffect(() => {
-    fetchStudentGrades()
+    fetchStudentData()
   }, [id])
 
-  const fetchStudentGrades = async () => {
+  const fetchStudentData = async () => {
+    setLoading(true)
     try {
-      const res = await api.get(`/students/${id}/grades/`)
-      setData(res.data)
+      const [gradesRes, enrolledRes] = await Promise.all([
+        api.get(`/students/${id}/grades/`),
+        api.get(`/students/${id}/enrolled/`),
+      ])
+      setData(gradesRes.data)
+      setEnrolledSubjects(enrolledRes.data.enrolled_subjects || [])
     } catch (err) {
       console.error('Student detail fetch error:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const openEnrollModal = async () => {
+    setSelectedSubjectIds(enrolledSubjects.map((s) => s.id))
+    setShowEnrollModal(true)
+    if (allSubjects.length === 0) {
+      setLoadingSubjects(true)
+      try {
+        const res = await api.get('/subjects/', { params: { page_size: 100 } })
+        setAllSubjects(res.data.results || res.data)
+      } catch (err) {
+        console.error('Subjects fetch error:', err)
+        addToast('Failed to load subjects', 'error')
+      } finally {
+        setLoadingSubjects(false)
+      }
+    }
+  }
+
+  const toggleSubject = (subId) => {
+    setSelectedSubjectIds((prev) =>
+      prev.includes(subId) ? prev.filter((i) => i !== subId) : [...prev, subId]
+    )
+  }
+
+  const handleSaveEnrollment = async () => {
+    setSavingEnrollment(true)
+    try {
+      await api.post(`/students/${id}/enroll/`, {
+        subject_ids: selectedSubjectIds,
+      })
+      addToast('Enrollment updated successfully', 'success')
+      setShowEnrollModal(false)
+      const res = await api.get(`/students/${id}/enrolled/`)
+      setEnrolledSubjects(res.data.enrolled_subjects || [])
+    } catch (err) {
+      console.error('Enrollment save error:', err)
+      const msg = err.response?.data?.detail || 'Failed to update enrollment.'
+      addToast(msg, 'error')
+    } finally {
+      setSavingEnrollment(false)
     }
   }
 
@@ -37,6 +98,7 @@ export default function StudentDetailPage() {
   }
 
   const letterClass = (letter) => `badge badge-${letter.toLowerCase()}`
+  const totalEnrolledUnits = enrolledSubjects.reduce((sum, s) => sum + (s.units || 0), 0)
 
   return (
     <div>
@@ -78,6 +140,71 @@ export default function StudentDetailPage() {
         </div>
       </div>
 
+      {/* Enrolled Subjects Section */}
+      <div className="table-container" style={{ marginBottom: 'var(--space-6)' }}>
+        <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--color-gray-800)' }}>
+              Enrolled Subjects ({enrolledSubjects.length})
+            </h3>
+            <span style={{
+              fontSize: 'var(--font-xs)',
+              background: 'var(--color-gray-100)',
+              color: 'var(--color-gray-700)',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              fontWeight: 500
+            }}>
+              {totalEnrolledUnits} total units
+            </span>
+          </div>
+          {isAdmin && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={openEnrollModal}
+              id="manage-enrollment-btn"
+            >
+              <IconEdit /> Manage Enrollment
+            </button>
+          )}
+        </div>
+
+        {enrolledSubjects.length === 0 ? (
+          <div className="table-empty">
+            No subjects currently enrolled.
+            {isAdmin && (
+              <div style={{ marginTop: 'var(--space-2)' }}>
+                <button className="btn btn-primary btn-sm" onClick={openEnrollModal}>
+                  <IconPlus /> Enroll Subjects
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Subject Code</th>
+                <th>Subject Name</th>
+                <th>Units</th>
+                <th>Instructor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enrolledSubjects.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ fontWeight: 600, color: 'var(--color-gray-900)' }}>{s.code}</td>
+                  <td>{s.name}</td>
+                  <td>{s.units}</td>
+                  <td style={{ color: 'var(--color-gray-600)' }}>{s.instructor_name || 'Unassigned'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Grade Records Section */}
       <div className="table-container">
         <div className="table-toolbar">
           <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--color-gray-800)' }}>
@@ -116,6 +243,70 @@ export default function StudentDetailPage() {
           </table>
         )}
       </div>
+
+      {/* Enroll Subjects Modal */}
+      {showEnrollModal && (
+        <Modal
+          title={`Manage Enrollment — ${data.student_name}`}
+          onClose={() => setShowEnrollModal(false)}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <span style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-600)' }}>
+                <strong>{selectedSubjectIds.length}</strong> selected (
+                {allSubjects
+                  .filter((s) => selectedSubjectIds.includes(s.id))
+                  .reduce((sum, s) => sum + (s.units || 0), 0)}{' '}
+                units)
+              </span>
+              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowEnrollModal(false)}
+                  disabled={savingEnrollment}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSaveEnrollment}
+                  disabled={savingEnrollment}
+                >
+                  {savingEnrollment ? 'Saving...' : 'Save Enrollment'}
+                </button>
+              </div>
+            </div>
+          }
+        >
+          <div>
+            <p style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-600)', marginBottom: 'var(--space-3)' }}>
+              Click to select or deselect subjects for this student:
+            </p>
+
+            {loadingSubjects ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-4)' }}>
+                <div className="spinner" />
+              </div>
+            ) : (
+              <div className="subject-chips">
+                {allSubjects.map((s) => {
+                  const isSelected = selectedSubjectIds.includes(s.id)
+                  return (
+                    <button
+                      type="button"
+                      key={s.id}
+                      className={`subject-chip${isSelected ? ' selected' : ''}`}
+                      onClick={() => toggleSubject(s.id)}
+                    >
+                      <span>{isSelected ? '✓' : '+'}</span>
+                      <span><strong>{s.code}</strong> &middot; {s.name} ({s.units}u)</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

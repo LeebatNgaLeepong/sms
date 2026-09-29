@@ -15,12 +15,26 @@ export default function SubjectsPage() {
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [teachers, setTeachers] = useState([])
   const { isAdmin } = useAuth()
   const { addToast } = useToast()
 
   useEffect(() => {
     fetchSubjects()
   }, [page, search])
+
+  useEffect(() => {
+    fetchTeachers()
+  }, [])
+
+  const fetchTeachers = async () => {
+    try {
+      const res = await api.get('/teachers/')
+      setTeachers(res.data)
+    } catch (err) {
+      console.error('Teachers fetch error:', err)
+    }
+  }
 
   const fetchSubjects = async () => {
     setLoading(true)
@@ -232,6 +246,22 @@ export default function SubjectsPage() {
                 required
                 placeholder="e.g., Introduction to Programming"
               />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="subject-instructor">Assigned Instructor</label>
+              <select
+                id="subject-instructor"
+                className="form-select"
+                value={form.instructor || ''}
+                onChange={(e) => setForm({ ...form, instructor: e.target.value ? parseInt(e.target.value) : '' })}
+              >
+                <option value="">No Instructor Assigned</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.first_name ? `${t.first_name} ${t.last_name}` : t.username} ({t.username})
+                  </option>
+                ))}
+              </select>
             </div>
           </form>
         </Modal>

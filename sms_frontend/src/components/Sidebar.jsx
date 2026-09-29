@@ -5,6 +5,7 @@ import {
   IconStudents,
   IconSubjects,
   IconGrades,
+  IconTeacher,
   IconLogout,
 } from './Icons'
 
@@ -39,6 +40,12 @@ export default function Sidebar({ isOpen, onClose }) {
       label: 'Subjects',
       icon: <IconSubjects />,
       show: true,
+    },
+    {
+      to: '/teachers',
+      label: 'Teachers',
+      icon: <IconTeacher />,
+      show: isAdmin,
     },
     {
       to: '/grades',
