@@ -38,13 +38,16 @@ class DashboardSummaryView(APIView):
         total_grades = Grade.objects.count()
         total_teachers = User.objects.filter(role='teacher').count()
 
-        # Compute average GPA across all students
-        students_with_grades = Student.objects.filter(grades__isnull=False).distinct()
-        if students_with_grades.exists():
-            student_gpas = [s.gpa for s in students_with_grades]
-            average_gpa = round(sum(student_gpas) / len(student_gpas), 2)
+        # Average GPA (simple) and GWA (weighted by units) across graded students
+        students_with_grades = list(
+            Student.objects.filter(grades__isnull=False).distinct()
+        )
+        if students_with_grades:
+            average_gpa = round(sum(s.gpa for s in students_with_grades) / len(students_with_grades), 2)
+            average_gwa = round(sum(s.gwa for s in students_with_grades) / len(students_with_grades), 2)
         else:
             average_gpa = 0.00
+            average_gwa = 0.00
 
         # Grade distribution breakdown (University of Antique scale)
         distribution_counts = (
@@ -76,6 +79,7 @@ class DashboardSummaryView(APIView):
             'total_subjects': total_subjects,
             'total_grades': total_grades,
             'average_gpa': average_gpa,
+            'average_gwa': average_gwa,
             'total_teachers': total_teachers,
             'grade_distribution': distribution_dict,
             'passing_rate': passing_rate,

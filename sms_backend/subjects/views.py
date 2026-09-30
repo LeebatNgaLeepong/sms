@@ -6,9 +6,11 @@ from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
+from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import SubjectPermission
+from schedules.terms import InvalidTerm, resolve_term
 from .models import Subject
 from .serializers import SubjectSerializer
 
@@ -54,6 +56,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post', 'put'], url_path='enroll')
+    @transaction.atomic
     def enroll_students(self, request, pk=None):
         """
         POST /api/subjects/{id}/enroll/
@@ -74,6 +77,14 @@ class SubjectViewSet(viewsets.ModelViewSet):
 
         from students.models import Student
 
+        # Validate before mutating so a bad term cannot half-apply.
+        try:
+            semester, school_year = resolve_term(request.data)
+        except InvalidTerm as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+
         raw_ids = request.data.get('student_ids', [])
         if hasattr(request.data, 'getlist'):
             raw_ids = request.data.getlist('student_ids')
@@ -91,14 +102,19 @@ class SubjectViewSet(viewsets.ModelViewSet):
         else:
             subject.enrolled_students.add(*students)
 
-        semester = request.data.get('semester') or settings.CURRENT_SEMESTER
-        school_year = request.data.get('school_year') or settings.CURRENT_SCHOOL_YEAR
-
         # Schedule the subject once for the whole cohort so every student in it
-        # is given the same class time.
-        from schedules.scheduler import schedule_subject
+        # is given the same class time. Subjects split into sections are
+        # scheduled per section instead.
+        from schedules.scheduler import schedule_subject, schedule_section
 
-        slot = schedule_subject(subject, semester=semester, school_year=school_year)
+        sections = list(subject.sections.all())
+        if sections:
+            for section in sections:
+                schedule_section(section, semester=semester, school_year=school_year)
+            slot = schedule_section(sections[0], semester, school_year)
+        else:
+            slot = schedule_subject(subject, semester=semester, school_year=school_year)
+
         slot_info = {
             'day': slot.day if slot else None,
             'start_time': str(slot.start_time) if slot else None,

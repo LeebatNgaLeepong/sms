@@ -9,15 +9,51 @@ A full-stack Student Management System application with Django REST Framework ba
 └── sms_frontend/      # React + Vite frontend
 ```
 
+## Academic Terms
+
+Semester and school year are chosen from dropdowns, never typed. The options come
+from `SEMESTER_CHOICES` / `SCHOOL_YEAR_CHOICES` in `sms_project/settings.py` and
+are served by `GET /api/terms/`, so the UI and the API can never disagree. An
+unrecognised value is rejected instead of being stored, and the sidebar always
+shows the current term.
+
+## Sections
+
+A **section** is one class group of a subject, e.g. `CS101-A`. Sections are what
+actually meet, so two sections of the same subject can run at different times and
+concurrently without clashing. A student takes one section of a subject per term.
+
+- **Subjects page → Sections column** — add, remove, and set capacity and
+  instructor for a subject's sections.
+- Sections show `enrolled/capacity`, so an over-subscribed section is obvious.
+- Add or remove several students from a section in one action; the section is
+  then scheduled once for its whole roster.
+- Subjects without sections still work: they are scheduled as a whole.
+
+## Grades and GWA
+
+Scores 0–100 are converted server-side to the University of Antique 1.00–5.00
+scale (lower is better, 3.00 passes, 5.00 fails).
+
+Two figures are reported, and they differ on purpose:
+
+- **GPA** — the simple mean of grade points.
+- **GWA (General Weighted Average)** — grade points weighted by subject units:
+  `sum(grade_points × units) / sum(units)`. This is the figure of merit the
+  university records, and it is what the student list, student page, and
+  dashboard show.
+
+A student with no recorded grades has 5.00 for both.
+
 ## Features
 
-- **Students** — auto-generated `STU-XXXXX` IDs, programs, year levels, GPA
-- **Subjects** — course codes, units, assigned instructor
-- **Teachers** — accounts with subject assignments
+- **Students** — auto-generated `STU-XXXXX` IDs, programs, year levels, GWA
+- **Subjects** — course codes, units, sections, assigned instructor
+- **Teachers** — accounts with subject and section assignments
 - **Grades** — scores 0–100, converted server-side to grade points
-- **Enrollments** — students enrolled in subjects per semester
+- **Enrollments** — students enrolled in subjects and sections per term
 - **Schedules** — weekly timetable with automatic conflict-free generation
-- **Dashboard** — enrolment counts, average GPA, grade distribution, passing rate
+- **Dashboard** — enrolment counts, average GWA, grade distribution, passing rate
 
 ## Grading Scale
 

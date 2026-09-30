@@ -84,7 +84,7 @@ class Student(models.Model):
     @property
     def gpa(self) -> float:
         """
-        Computed GPA = average of grade_points across all Grade records (rounded to 2 decimals).
+        Simple average of grade_points across all Grade records (rounded to 2 decimals).
         Uses University of Antique scale (1.00 = best, 5.00 = fail).
         Returns 5.00 if student has no recorded grades (no subjects attempted).
         """
@@ -93,6 +93,39 @@ class Student(models.Model):
             return 5.00
         avg_points = grades.aggregate(models.Avg('grade_points'))['grade_points__avg']
         return round(float(avg_points or 5.00), 2)
+
+    @property
+    def gwa(self) -> float:
+        """
+        General Weighted Average: grade points weighted by subject units, which is
+        the figure of merit the university reports.
+
+            GWA = sum(grade_points x units) / sum(units)
+
+        Returns 5.00 when the student has no recorded grades.
+        """
+        from decimal import Decimal
+
+        total_units = 0
+        weighted = Decimal('0')
+        for grade in self.grades.select_related('subject'):
+            units = grade.subject.units or 0
+            if units <= 0:
+                continue
+            total_units += units
+            weighted += Decimal(str(grade.grade_points)) * units
+
+        if total_units == 0:
+            return 5.00
+        return round(float(weighted / Decimal(total_units)), 2)
+
+    @property
+    def units_earned(self) -> int:
+        """Total credit units across graded subjects."""
+        return sum(
+            (g.subject.units or 0)
+            for g in self.grades.select_related('subject')
+        )
 
     def __str__(self) -> str:
         return f"{self.id} - {self.name}"

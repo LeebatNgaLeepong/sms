@@ -84,10 +84,10 @@ export default function DashboardPage() {
 
         <div className="stat-card">
           <div className="stat-card-header">
-            <span className="stat-card-label">Average GPA</span>
+            <span className="stat-card-label">Average GWA</span>
             <div className="stat-card-icon green"><IconGrades /></div>
           </div>
-          <div className="stat-card-value">{data.average_gpa.toFixed(2)}</div>
+          <div className="stat-card-value">{data.average_gwa.toFixed(2)}</div>
         </div>
 
         <div className="stat-card">

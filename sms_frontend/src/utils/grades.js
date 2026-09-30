@@ -70,13 +70,15 @@ export const gradeColor = (value) => COLOR_BY_GRADE_POINT[normalize(value)] || '
 
 export const gradeDescription = (value) => GRADE_DESCRIPTIONS[normalize(value)] || ''
 
-/** Colour for a GPA on the 1.00-5.00 scale (lower is better). */
-export const gpaColor = (gpa) => {
-  const value = Number.parseFloat(gpa)
-  if (Number.isNaN(value)) return 'var(--color-gray-500)'
-  if (value <= 1.5) return 'var(--color-success)'
-  if (value <= 2.0) return 'var(--color-info)'
-  if (value <= 2.5) return 'var(--color-gold-600)'
-  if (value <= 3.0) return 'var(--color-warning)'
+/** Colour for a GPA or GWA on the 1.00-5.00 scale (lower is better). */
+export const gpaColor = (value) => {
+  const num = Number.parseFloat(value)
+  if (Number.isNaN(num)) return 'var(--color-gray-500)'
+  if (num <= 1.5) return 'var(--color-success)'
+  if (num <= 2.0) return 'var(--color-info)'
+  if (num <= 2.5) return 'var(--color-gold-600)'
+  if (num <= 3.0) return 'var(--color-warning)'
   return 'var(--color-error)'
 }
+
+export const gwaColor = gpaColor

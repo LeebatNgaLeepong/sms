@@ -3,6 +3,8 @@ import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
+import TermFields from '../components/TermFields'
+import useTerms from '../hooks/useTerms'
 import {
   IconSearch,
   IconPlus,
@@ -73,6 +75,9 @@ const errorText = (err, fallback) => {
 export default function SchedulesPage() {
   const { isAdmin, isTeacher, isStudent } = useAuth()
   const { addToast } = useToast()
+  const { current, semesters, school_years: schoolYears } = useTerms()
+
+  const [term, setTerm] = useState(current)
 
   const [schedules, setSchedules] = useState([])
   const [timeSlots, setTimeSlots] = useState([])
@@ -118,6 +123,8 @@ export default function SchedulesPage() {
           page_size: 500,
           search: search || undefined,
           student: studentFilter || undefined,
+          semester: term.semester,
+          school_year: term.school_year,
         },
       })
       setSchedules(res.data.results || res.data || [])
@@ -127,7 +134,7 @@ export default function SchedulesPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, studentFilter, addToast])
+  }, [search, studentFilter, term.semester, term.school_year, addToast])
 
   useEffect(() => {
     loadReferenceData()
@@ -215,7 +222,12 @@ export default function SchedulesPage() {
 
   const openCreateSchedule = () => {
     setEditSchedule(null)
-    setScheduleForm({ ...emptyScheduleForm, student: studentFilter || '' })
+    setScheduleForm({
+      ...emptyScheduleForm,
+      student: studentFilter || '',
+      semester: term.semester,
+      school_year: term.school_year,
+    })
     setShowScheduleModal(true)
   }
 
@@ -279,7 +291,11 @@ export default function SchedulesPage() {
 
     setRegenerating(true)
     try {
-      const res = await api.post('/schedules/generate/', { student_ids: targetIds })
+      const res = await api.post('/schedules/generate/', {
+        student_ids: targetIds,
+        semester: term.semester,
+        school_year: term.school_year,
+      })
       const scheduled = (res.data.results || []).reduce(
         (sum, r) => sum + r.schedules.filter((s) => s.time_slot).length,
         0
@@ -306,7 +322,7 @@ export default function SchedulesPage() {
           <p className="page-subtitle">
             {isStudent
               ? 'Your weekly class timetable'
-              : `${schedules.length} scheduled class${schedules.length !== 1 ? 'es' : ''}`}
+              : `${schedules.length} scheduled class${schedules.length !== 1 ? 'es' : ''} in ${term.semester} ${term.school_year}`}
           </p>
         </div>
         {isAdmin && (
@@ -339,6 +355,32 @@ export default function SchedulesPage() {
             />
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              className="filter-select"
+              value={term.semester}
+              onChange={(e) => setTerm({ ...term, semester: e.target.value })}
+              id="schedule-term-semester"
+              title="Semester"
+            >
+              {semesters.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <select
+              className="filter-select"
+              value={term.school_year}
+              onChange={(e) => setTerm({ ...term, school_year: e.target.value })}
+              id="schedule-term-year"
+              title="School Year"
+            >
+              {schoolYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
             {!isStudent && (
               <select
                 className="filter-select"
@@ -665,40 +707,50 @@ export default function SchedulesPage() {
           }
         >
           <form id="schedule-form" onSubmit={handleSaveSchedule}>
-            <div className="form-group">
-              <label className="form-label" htmlFor="schedule-student">Student</label>
-              <select
-                id="schedule-student"
-                className="form-select"
-                value={scheduleForm.student}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, student: e.target.value })}
-                required
-              >
-                <option value="">Select student</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="schedule-student">Student</label>
+                <select
+                  id="schedule-student"
+                  className="form-select"
+                  value={scheduleForm.student}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, student: e.target.value })}
+                  required
+                >
+                  <option value="">Select student</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="schedule-subject">Subject</label>
+                <select
+                  id="schedule-subject"
+                  className="form-select"
+                  value={scheduleForm.subject}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, subject: e.target.value })}
+                  required
+                >
+                  <option value="">Select subject</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.code} &middot; {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="schedule-subject">Subject</label>
-              <select
-                id="schedule-subject"
-                className="form-select"
-                value={scheduleForm.subject}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, subject: e.target.value })}
-                required
-              >
-                <option value="">Select subject</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} &middot; {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <TermFields
+              idPrefix="schedule"
+              semester={scheduleForm.semester}
+              schoolYear={scheduleForm.school_year}
+              onChange={({ semester, schoolYear }) =>
+                setScheduleForm((f) => ({ ...f, semester, school_year: schoolYear }))
+              }
+            />
             <div className="form-group">
               <label className="form-label" htmlFor="schedule-slot">Time Slot</label>
               <select
@@ -717,28 +769,6 @@ export default function SchedulesPage() {
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label" htmlFor="schedule-semester">Semester</label>
-                <input
-                  id="schedule-semester"
-                  className="form-input"
-                  value={scheduleForm.semester}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, semester: e.target.value })}
-                  placeholder="e.g., 1st Sem"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="schedule-year">School Year</label>
-                <input
-                  id="schedule-year"
-                  className="form-input"
-                  value={scheduleForm.school_year}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, school_year: e.target.value })}
-                  placeholder="e.g., 2025-2026"
-                />
-              </div>
             </div>
           </form>
         </Modal>

@@ -12,6 +12,7 @@ Features:
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Case, IntegerField, Value, When
@@ -118,11 +119,59 @@ class TimeSlot(models.Model):
         return f"{self.get_day_display()} {self.start_time}-{self.end_time} ({self.get_slot_type_display()}){label}"
 
 
+class Section(models.Model):
+    """
+    A section of a subject, e.g. CS101-A.
+
+    Each section meets at its own time, so two sections of the same subject can
+    run concurrently without conflicting. Sections are what get scheduled; a
+    student taking a subject is taking one of its sections.
+    """
+
+    subject = models.ForeignKey(
+        'subjects.Subject',
+        on_delete=models.CASCADE,
+        related_name='sections',
+        help_text="The subject this section belongs to.",
+    )
+    code = models.CharField(
+        max_length=20,
+        help_text="Section code (e.g., A, B, 1A).",
+    )
+    capacity = models.PositiveSmallIntegerField(
+        default=40,
+        help_text="Maximum number of students in this section.",
+    )
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sections_taught',
+        limit_choices_to={'role': 'teacher'},
+        help_text="Faculty handling this section.",
+    )
+    students = models.ManyToManyField(
+        'students.Student',
+        blank=True,
+        related_name='sections',
+        help_text="Students taking this section.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['subject__code', 'code']
+        unique_together = ('subject', 'code')
+
+    def __str__(self) -> str:
+        return f"{self.subject.code}-{self.code}"
+
+
 class StudentSchedule(models.Model):
     """
-    Links a student to a subject with a specific time slot.
-    Automatically generated when subjects are added to a student,
-    ensuring no time conflicts (no two subjects overlap in the same slot).
+    Links a student to a subject section with a specific time slot.
+    Automatically generated when sections are assigned to a student,
+    ensuring no time conflicts (no two classes overlap in the same slot).
     """
 
     student = models.ForeignKey(
@@ -137,6 +186,14 @@ class StudentSchedule(models.Model):
         related_name='schedules',
         help_text="The subject scheduled.",
     )
+    section = models.ForeignKey(
+        Section,
+        on_delete=models.CASCADE,
+        related_name='schedules',
+        null=True,
+        blank=True,
+        help_text="The section of the subject being taken.",
+    )
     time_slot = models.ForeignKey(
         TimeSlot,
         on_delete=models.CASCADE,
@@ -146,7 +203,7 @@ class StudentSchedule(models.Model):
     semester = models.CharField(
         max_length=50,
         blank=True,
-        help_text="Semester (e.g., '1st Sem 2026').",
+        help_text="Semester (e.g., '1st Sem').",
     )
     school_year = models.CharField(
         max_length=20,

@@ -28,8 +28,14 @@ class StudentSerializer(serializers.ModelSerializer):
     )
     gpa = serializers.FloatField(
         read_only=True,
-        help_text="Computed GPA across all completed/graded subjects.",
+        help_text="Simple average of grade points across graded subjects.",
     )
+    gwa = serializers.FloatField(
+        read_only=True,
+        help_text="General Weighted Average: grade points weighted by subject units.",
+    )
+    units_earned = serializers.IntegerField(read_only=True)
+    sections = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Student
@@ -42,10 +48,25 @@ class StudentSerializer(serializers.ModelSerializer):
             'program',
             'year_level',
             'gpa',
+            'gwa',
+            'units_earned',
+            'sections',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'gpa', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'gpa', 'gwa', 'units_earned', 'sections',
+                            'created_at', 'updated_at']
+
+    def get_sections(self, obj):
+        return [
+            {
+                'id': s.id,
+                'code': s.code,
+                'subject_code': s.subject.code,
+                'subject_name': s.subject.name,
+            }
+            for s in obj.sections.select_related('subject')
+        ]
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
@@ -68,5 +89,7 @@ class StudentGradesSummarySerializer(serializers.Serializer):
     program = serializers.CharField()
     year_level = serializers.CharField()
     gpa = serializers.FloatField()
+    gwa = serializers.FloatField()
+    units_earned = serializers.IntegerField()
     total_grades = serializers.IntegerField()
     grades = serializers.ListField(child=serializers.DictField())

@@ -4,6 +4,8 @@ Verifies auto ID generation, GPA computation, and role-based permissions.
 """
 
 from decimal import Decimal
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
@@ -195,3 +197,52 @@ class EnrollmentScheduleTests(APITestCase):
         }, format='json')
         self.assertEqual(res.data['scheduled_count'], 1)
         self.assertEqual(self.student.schedules.count(), 1)
+
+    def test_enroll_rolls_back_when_scheduling_fails(self):
+        """A scheduler failure must not leave the student's subjects changed."""
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('student-enroll', kwargs={'pk': self.student.id})
+        self.client.post(url, {
+            'subject_ids': [self.subject_a.id, self.subject_b.id],
+            'semester': '1st Sem',
+            'school_year': '2025-2026',
+        }, format='json')
+        self.assertEqual(self.student.enrolled_subjects.count(), 2)
+
+        with patch(
+            'schedules.scheduler.regenerate_student_schedule',
+            side_effect=RuntimeError('scheduler exploded'),
+        ):
+            res = self.client.post(url, {
+                'subject_ids': [self.subject_a.id],
+                'semester': '1st Sem',
+                'school_year': '2025-2026',
+            }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        # The internal error text must not be handed back to the client.
+        self.assertNotIn('scheduler exploded', str(res.data))
+        # Enrollment and schedules both stay on the previous, consistent state.
+        self.assertEqual(self.student.enrolled_subjects.count(), 2)
+        self.assertEqual(self.student.schedules.count(), 2)
+
+    def test_enroll_rejects_non_numeric_subject_ids(self):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('student-enroll', kwargs={'pk': self.student.id})
+        res = self.client.post(url, {'subject_ids': ['abc']}, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        # Not a raw database error leaking through to the response.
+        self.assertNotIn('expected a number', str(res.data))
+        self.assertEqual(self.student.enrolled_subjects.count(), 0)
+
+    def test_enroll_reports_unknown_subject_ids(self):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('student-enroll', kwargs={'pk': self.student.id})
+        res = self.client.post(url, {
+            'subject_ids': [self.subject_a.id, 999999],
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['not_found'], ['999999'])
+        self.assertEqual(res.data['enrolled_count'], 1)

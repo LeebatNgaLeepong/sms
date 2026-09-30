@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import { IconSearch, IconPlus, IconEdit, IconTrash, IconEye } from '../components/Icons'
-import { gpaColor } from '../utils/grades'
+import { gwaColor } from '../utils/grades'
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([])
@@ -139,7 +139,7 @@ export default function StudentsPage() {
                 <th>Email</th>
                 <th>Program</th>
                 <th>Year</th>
-                <th>GPA</th>
+                <th title="General Weighted Average: grade points weighted by subject units">GWA</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -152,8 +152,8 @@ export default function StudentsPage() {
                   <td>{s.program}</td>
                   <td>{s.year_level}</td>
                   <td>
-                    <span style={{ fontWeight: 600, color: gpaColor(s.gpa) }}>
-                      {(s.gpa || 0).toFixed(2)}
+                    <span style={{ fontWeight: 600, color: gwaColor(s.gwa ?? 5) }}>
+                      {(s.gwa ?? 5).toFixed(2)}
                     </span>
                   </td>
                   <td>

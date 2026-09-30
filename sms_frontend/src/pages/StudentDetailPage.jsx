@@ -5,13 +5,16 @@ import { IconChevronLeft, IconPlus, IconEdit } from '../components/Icons'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import { gradeBadgeClass, gpaColor } from '../utils/grades'
+import { gradeBadgeClass, gpaColor, gwaColor } from '../utils/grades'
+import TermFields from '../components/TermFields'
+import useTerms from '../hooks/useTerms'
 
 export default function StudentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { isAdmin } = useAuth()
   const { addToast } = useToast()
+  const { current } = useTerms()
 
   const [data, setData] = useState(null)
   const [enrolledSubjects, setEnrolledSubjects] = useState([])
@@ -22,6 +25,7 @@ export default function StudentDetailPage() {
   const [allSubjects, setAllSubjects] = useState([])
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([])
   const [savingEnrollment, setSavingEnrollment] = useState(false)
+  const [enrollTerm, setEnrollTerm] = useState(current)
   const [loadingSubjects, setLoadingSubjects] = useState(false)
 
   useEffect(() => {
@@ -72,6 +76,8 @@ export default function StudentDetailPage() {
     try {
       const res = await api.post(`/students/${id}/enroll/`, {
         subject_ids: selectedSubjectIds,
+        semester: enrollTerm.semester,
+        school_year: enrollTerm.school_year,
       })
       const scheduled = res.data?.scheduled_count
       addToast(
@@ -133,10 +139,21 @@ export default function StudentDetailPage() {
           <div className="detail-field-value">{data.year_level}</div>
         </div>
         <div className="detail-field">
-          <div className="detail-field-label">GPA</div>
+          <div className="detail-field-label">General Weighted Average</div>
+          <div className="detail-field-value" style={{ color: gwaColor(data.gwa) }}>
+            {(data.gwa ?? 5).toFixed(2)}
+          </div>
+          <div className="detail-field-hint">Grade points weighted by units</div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">GPA (simple average)</div>
           <div className="detail-field-value" style={{ color: gpaColor(data.gpa) }}>
             {data.gpa.toFixed(2)}
           </div>
+        </div>
+        <div className="detail-field">
+          <div className="detail-field-label">Units Earned</div>
+          <div className="detail-field-value">{data.units_earned ?? 0}</div>
         </div>
         <div className="detail-field">
           <div className="detail-field-label">Total Grades</div>
@@ -283,8 +300,29 @@ export default function StudentDetailPage() {
         >
           <div>
             <p style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-600)', marginBottom: 'var(--space-3)' }}>
-              Click to select or deselect subjects for this student:
+              Tick every subject this student is taking. You can select as many as you
+              like.
             </p>
+
+            <div className="form-row" style={{ marginBottom: 'var(--space-4)' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <TermFields
+                  idPrefix="enroll"
+                  semester={enrollTerm.semester}
+                  schoolYear={enrollTerm.school_year}
+                  onChange={({ semester, schoolYear }) =>
+                    setEnrollTerm({ semester, school_year: schoolYear })
+                  }
+                />
+              </div>
+            </div>
+
+            {selectedSubjectIds.length > 0 && (
+              <div className="alert alert-info" style={{ marginBottom: 'var(--space-3)' }}>
+                {selectedSubjectIds.length} subject{selectedSubjectIds.length !== 1 ? 's' : ''} selected
+                — saves as this student's subjects for {enrollTerm.semester} {enrollTerm.school_year}.
+              </div>
+            )}
 
             {loadingSubjects ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-4)' }}>

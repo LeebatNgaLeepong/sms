@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import useTerms from '../hooks/useTerms'
 import {
   IconDashboard,
   IconStudents,
@@ -12,6 +13,7 @@ import {
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, logout, isAdmin, isTeacher, isStudent } = useAuth()
+  const { termLabel } = useTerms()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -93,6 +95,11 @@ export default function Sidebar({ isOpen, onClose }) {
               </NavLink>
             ))}
         </nav>
+
+        <div className="sidebar-term" title="Current term">
+          <span className="sidebar-term-label">Current term</span>
+          <span className="sidebar-term-value">{termLabel}</span>
+        </div>
 
         <div className="sidebar-footer">
           <div className="sidebar-user">

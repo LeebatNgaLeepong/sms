@@ -129,10 +129,24 @@ REST_FRAMEWORK = {
     ),
 }
 
-# The term new enrollments and schedule generation default to. Keeping one
-# configured term stops enrollment from silently creating a parallel timetable
-# under a different (or empty) semester.
-CURRENT_SEMESTER = '1st Sem 2026'
+# The academic term options enrollment and scheduling may use. Keeping a fixed
+# list stops unvalidated free text from writing junk into semester/school_year
+# and splitting one timetable across several terms.
+SEMESTER_CHOICES = [
+    '1st Sem',
+    '2nd Sem',
+    'Summer',
+]
+
+SCHOOL_YEAR_CHOICES = [
+    '2024-2025',
+    '2025-2026',
+    '2026-2027',
+    '2027-2028',
+]
+
+# The term new enrollments and schedule generation default to.
+CURRENT_SEMESTER = '1st Sem'
 CURRENT_SCHOOL_YEAR = '2025-2026'
 
 # Simple JWT Configuration

@@ -11,7 +11,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from schedules.models import StudentSchedule, TimeSlot
+from schedules.models import Section, StudentSchedule, TimeSlot
 from schedules.scheduler import (
     regenerate_all_schedules,
     regenerate_student_schedule,
@@ -336,6 +336,208 @@ class SubjectEnrollmentTests(APITestCase):
             format='json',
         )
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class TermValidationTests(APITestCase):
+    """Semester and school year must come from the configured options."""
+
+    def setUp(self):
+        from django.conf import settings
+
+        self.admin = User.objects.create_superuser(
+            username='root_term', email='root_term@test.com', password='pw'
+        )
+        self.settings = settings
+        self.subject = Subject.objects.create(code='TERM1', name='Term Subject', units=3)
+        self.student = Student.objects.create(
+            user=User.objects.create_user(
+                username='stu_term', email='stu_term@t.com', password='pw',
+                role=User.ROLE_STUDENT,
+            ),
+            name='Term Student',
+            email='stu_term@t.com',
+            program='BS CS',
+            year_level='1st Year',
+        )
+        for day in ['Mon', 'Tue']:
+            TimeSlot.objects.create(
+                day=day, start_time=time(7, 0), end_time=time(9, 0), slot_type='lec'
+            )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_terms_endpoint_returns_options(self):
+        res = self.client.get(reverse('term-list'))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['semesters'], self.settings.SEMESTER_CHOICES)
+        self.assertEqual(res.data['school_years'], self.settings.SCHOOL_YEAR_CHOICES)
+        self.assertEqual(res.data['current']['semester'], self.settings.CURRENT_SEMESTER)
+
+    def test_enroll_rejects_unknown_semester(self):
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [self.student.id], 'semester': 'Third Trimester'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('semester', res.data)
+        self.assertEqual(self.subject.enrolled_students.count(), 0)
+
+    def test_enroll_rejects_unknown_school_year(self):
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [self.student.id], 'school_year': 'not-a-year'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('school_year', res.data)
+
+    def test_enroll_accepts_valid_term(self):
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {
+                'student_ids': [self.student.id],
+                'semester': '2nd Sem',
+                'school_year': '2026-2027',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        row = StudentSchedule.objects.get(subject=self.subject)
+        self.assertEqual(row.semester, '2nd Sem')
+        self.assertEqual(row.school_year, '2026-2027')
+
+    def test_generate_rejects_unknown_term(self):
+        res = self.client.post(
+            reverse('schedule-generate-all'),
+            {'semester': 'whatever', 'school_year': self.settings.CURRENT_SCHOOL_YEAR},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('semester', res.data)
+
+
+class SectionTests(APITestCase):
+    """Sections are the classes that actually meet, one time per roster."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='root_sec', email='root_sec@test.com', password='pw'
+        )
+        self.subject = Subject.objects.create(code='SEC1', name='Sectioned', units=3)
+        self.students = [
+            Student.objects.create(
+                user=User.objects.create_user(
+                    username=f'sec{i}', email=f'sec{i}@t.com', password='pw',
+                    role=User.ROLE_STUDENT,
+                ),
+                name=f'Section Student {i}',
+                email=f'sec{i}@t.com',
+                program='BS CS',
+                year_level='1st Year',
+            )
+            for i in range(1, 5)
+        ]
+        for day in ['Mon', 'Tue', 'Wed']:
+            TimeSlot.objects.create(
+                day=day, start_time=time(7, 0), end_time=time(9, 0), slot_type='lec'
+            )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_create_section(self):
+        res = self.client.post(
+            reverse('section-list'),
+            {'subject': self.subject.id, 'code': 'A', 'capacity': 30},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['code'], 'A')
+        self.assertEqual(res.data['subject_code'], 'SEC1')
+
+    def test_section_code_must_be_unique_per_subject(self):
+        self.client.post(
+            reverse('section-list'),
+            {'subject': self.subject.id, 'code': 'A'},
+            format='json',
+        )
+        res = self.client.post(
+            reverse('section-list'),
+            {'subject': self.subject.id, 'code': 'A'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_students_added_to_a_section_share_one_time(self):
+        section_a = Section.objects.create(subject=self.subject, code='A')
+        section_b = Section.objects.create(subject=self.subject, code='B')
+        section_a.students.set(self.students[:2])
+        section_b.students.set(self.students[2:])
+
+        res = self.client.post(
+            reverse('section-set-students', kwargs={'pk': section_a.id}),
+            {'student_ids': [self.students[0].id]},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        regenerate_all_schedules(semester='1st Sem', school_year='2025-2026')
+
+        times = {}
+        for section in (section_a, section_b):
+            slots = set(
+                StudentSchedule.objects.filter(section=section).values_list(
+                    'time_slot_id', flat=True
+                )
+            )
+            self.assertEqual(len(slots), 1, f'section {section.code} must have one time')
+            times[section.code] = slots.pop()
+
+        # Two sections of one subject are allowed to run at different times.
+        self.assertNotEqual(times['A'], times['B'])
+
+    def test_moving_student_between_sections_replaces_their_slot(self):
+        """A student may only hold one section of a subject in a term."""
+        section_a = Section.objects.create(subject=self.subject, code='A')
+        section_b = Section.objects.create(subject=self.subject, code='B')
+        section_a.students.set(self.students[:1])
+        section_b.students.set(self.students[1:])
+
+        regenerate_all_schedules(semester='1st Sem', school_year='2025-2026')
+        first = StudentSchedule.objects.get(student=self.students[0], subject=self.subject)
+        self.assertEqual(first.section, section_a)
+
+        res = self.client.post(
+            reverse('section-set-students', kwargs={'pk': section_b.id}),
+            {'student_ids': [self.students[0].id]},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        rows = StudentSchedule.objects.filter(
+            student=self.students[0], subject=self.subject, semester='1st Sem',
+            school_year='2025-2026',
+        )
+        self.assertEqual(rows.count(), 1, 'student must hold exactly one row for the subject')
+        self.assertEqual(rows.first().section, section_b)
+
+    def test_section_shows_roster_and_enrolled_count(self):
+        section = Section.objects.create(subject=self.subject, code='A')
+        section.students.set(self.students[:3])
+        res = self.client.get(reverse('section-detail', kwargs={'pk': section.id}))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['enrolled_count'], 3)
+
+    def test_regenerate_all_covers_sections(self):
+        section = Section.objects.create(subject=self.subject, code='A')
+        section.students.set(self.students)
+        self.subject.enrolled_students.set(self.students)
+
+        results = regenerate_all_schedules(
+            semester='1st Sem', school_year='2025-2026'
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['section'], 'A')
+        self.assertEqual(results[0]['student_count'], 4)
+        self.assertIsNotNone(results[0]['time_slot'])
 
 
 class ScheduleAdminTests(APITestCase):

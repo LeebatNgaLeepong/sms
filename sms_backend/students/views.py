@@ -2,16 +2,26 @@
 ViewSets for students app.
 """
 
+import logging
+
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
+from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import StudentPermission
+from schedules.terms import InvalidTerm, resolve_term
 from subjects.models import Subject
 from .models import Student
 from .serializers import StudentSerializer
+
+logger = logging.getLogger(__name__)
+
+
+class ScheduleGenerationError(Exception):
+    """Raised internally so a failed run rolls back the whole enrollment."""
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -86,6 +96,8 @@ class StudentViewSet(viewsets.ModelViewSet):
             'program': student.program,
             'year_level': student.year_level,
             'gpa': student.gpa,
+            'gwa': student.gwa,
+            'units_earned': student.units_earned,
             'total_grades': len(grades_data),
             'grades': grades_data,
         }
@@ -125,8 +137,20 @@ class StudentViewSet(viewsets.ModelViewSet):
         Admin-only.
         """
         if request.user.role not in ['admin'] and not request.user.is_superuser:
-            return Response({'detail': 'Only admins can modify enrollments.'}, status=403)
+            return Response(
+                {'detail': 'Only admins can modify enrollments.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
+        try:
+            return self._enroll(request)
+        except ScheduleGenerationError:
+            return Response(
+                {'detail': 'Enrollment could not be scheduled. No changes were saved.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def _enroll(self, request):
         student = self.get_object()
         # QueryDict (multipart/form-data) needs getlist() to keep every repeated id.
         if hasattr(request.data, 'getlist'):
@@ -135,25 +159,47 @@ class StudentViewSet(viewsets.ModelViewSet):
             subject_ids = request.data.get('subject_ids', [])
         if not isinstance(subject_ids, (list, tuple)):
             subject_ids = [subject_ids]
-        semester = request.data.get('semester') or settings.CURRENT_SEMESTER
-        school_year = request.data.get('school_year') or settings.CURRENT_SCHOOL_YEAR
-
-        try:
-            subjects = Subject.objects.filter(id__in=subject_ids)
-            student.enrolled_subjects.set(subjects)
-
-            # Auto-generate schedules for the enrolled subjects
-            from schedules.scheduler import regenerate_student_schedule
-            schedule_result = regenerate_student_schedule(
-                student, semester=semester, school_year=school_year
+        # Ids arrive as strings over form-data and JSON alike, so normalise them
+        # before they reach the database and fail on a non-numeric value.
+        subject_ids = [str(i).strip() for i in subject_ids if str(i).strip()]
+        invalid = [i for i in subject_ids if not i.isdigit()]
+        if invalid:
+            return Response(
+                {'detail': f"Invalid subject_ids: {', '.join(invalid)}. Expected numbers."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-            scheduled_count = sum(1 for r in schedule_result if r['time_slot'] is not None)
-            return Response({
-                'student_id': student.id,
-                'enrolled_count': subjects.count(),
-                'scheduled_count': scheduled_count,
-                'detail': 'Enrollment updated successfully. Schedules auto-generated.',
-            })
-        except Exception as e:
-            return Response({'detail': str(e)}, status=400)
+        try:
+            semester, school_year = resolve_term(request.data)
+        except InvalidTerm as exc:
+            return Response({exc.field: [exc.message]}, status=400)
+
+        subjects = list(Subject.objects.filter(id__in=subject_ids))
+        found = {str(s.id) for s in subjects}
+        missing = [i for i in subject_ids if i not in found]
+
+        # Enrollment and its generated schedules are one unit of work: a
+        # scheduler failure must not leave the student with a different set of
+        # subjects than the schedules the response reports.
+        with transaction.atomic():
+            student.enrolled_subjects.set(subjects)
+
+            from schedules.scheduler import regenerate_student_schedule
+            try:
+                schedule_result = regenerate_student_schedule(
+                    student, semester=semester, school_year=school_year
+                )
+            except Exception:
+                logger.exception('Schedule generation failed for student %s', student.id)
+                # Returning here would let the atomic block commit, so the
+                # failure has to travel out as an exception to roll it back.
+                raise ScheduleGenerationError
+
+        scheduled_count = sum(1 for r in schedule_result if r['time_slot'] is not None)
+        return Response({
+            'student_id': student.id,
+            'enrolled_count': len(subjects),
+            'scheduled_count': scheduled_count,
+            'not_found': missing,
+            'detail': 'Enrollment updated successfully. Schedules auto-generated.',
+        })

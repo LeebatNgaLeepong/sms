@@ -20,6 +20,63 @@ from subjects.models import Subject
 User = get_user_model()
 
 
+class WeightedAverageTests(APITestCase):
+    """GWA weights grade points by subject units; the simple GPA does not."""
+
+    def setUp(self):
+        self.student = Student.objects.create(
+            user=get_user_model().objects.create_user(
+                username='gwa_user', email='gwa_user@t.com', password='pw',
+                role=get_user_model().ROLE_STUDENT,
+            ),
+            name='GWA Student',
+            email='gwa_user@t.com',
+            program='BS CS',
+            year_level='1st Year',
+        )
+        # 3 units scoring 1.00 and 5 units scoring 3.00
+        self.light = Subject.objects.create(code='GWA101', name='Light', units=3)
+        self.heavy = Subject.objects.create(code='GWA102', name='Heavy', units=5)
+        self.teacher = get_user_model().objects.create_user(
+            username='gwa_teacher', email='gwa_teacher@t.com', password='pw',
+            role=get_user_model().ROLE_TEACHER,
+        )
+
+    def _grade(self, subject, score):
+        return Grade.objects.create(
+            student=self.student, subject=subject, score=Decimal(score),
+            recorded_by=self.teacher,
+        )
+
+    def test_gwa_weights_by_units(self):
+        self._grade(self.light, '99.00')  # 1.00 points
+        self._grade(self.heavy, '76.00')  # 3.00 points
+        # (3 * 1.00 + 5 * 3.00) / 8 = 18 / 8 = 2.25
+        self.assertEqual(self.student.gwa, 2.25)
+
+    def test_gpa_ignores_units(self):
+        self._grade(self.light, '99.00')
+        self._grade(self.heavy, '76.00')
+        # simple mean of 1.00 and 3.00
+        self.assertEqual(self.student.gpa, 2.00)
+
+    def test_gwa_defaults_to_five_without_grades(self):
+        self.assertEqual(self.student.gwa, 5.00)
+        self.assertEqual(self.student.units_earned, 0)
+
+    def test_units_earned_sums_graded_subjects(self):
+        self._grade(self.light, '99.00')
+        self.assertEqual(self.student.units_earned, 3)
+
+    def test_gwa_exposed_on_student_api(self):
+        self._grade(self.light, '99.00')
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.get(reverse('student-detail', kwargs={'pk': self.student.id}))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['gwa'], 1.0)
+        self.assertEqual(res.data['units_earned'], 3)
+
+
 class GradeLogicAndAPITests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(

@@ -296,6 +296,23 @@ class Command(BaseCommand):
             student.enrolled_subjects.set(subject_list)
         self.stdout.write(self.style.SUCCESS("Enrolled students in subjects."))
 
+        from schedules.models import Section
+        for subject in [cs101, cs201, math101, eng101, phy101]:
+            for code in ('A', 'B'):
+                Section.objects.get_or_create(subject=subject, code=code)
+
+        # Spread each subject's enrolled students across its sections so the
+        # demo data exercises section-based scheduling.
+        for subject in [cs101, cs201, math101, eng101, phy101]:
+            sections = list(Section.objects.filter(subject=subject).order_by('code'))
+            if len(sections) < 2:
+                continue
+            enrolled = list(subject.enrolled_students.order_by('id'))
+            for index, student in enumerate(enrolled):
+                sections[index % len(sections)].students.add(student)
+
+        self.stdout.write(self.style.SUCCESS("Created sections and assigned students."))
+
         from schedules.scheduler import regenerate_all_schedules
         result = regenerate_all_schedules(
             semester=settings.CURRENT_SEMESTER, school_year=settings.CURRENT_SCHOOL_YEAR
@@ -305,7 +322,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"Created {scheduled_total} sample schedule entries "
-                f"across {len(result)} subject(s)."
+                f"across {len(result)} class(es)."
             )
         )
         self.stdout.write(self.style.SUCCESS("Database seeding completed successfully!"))

@@ -25,6 +25,12 @@ export default function SubjectsPage() {
   const [enrolledCounts, setEnrolledCounts] = useState({})
   const [savingEnrollment, setSavingEnrollment] = useState(false)
   const [studentSearch, setStudentSearch] = useState('')
+  const [showSectionModal, setShowSectionModal] = useState(false)
+  const [sectionSubject, setSectionSubject] = useState(null)
+  const [sections, setSections] = useState([])
+  const [sectionCounts, setSectionCounts] = useState({})
+  const [sectionForm, setSectionForm] = useState({ code: '', capacity: 40, instructor: '' })
+  const [savingSection, setSavingSection] = useState(false)
   const { isAdmin } = useAuth()
   const { addToast } = useToast()
 
@@ -72,20 +78,79 @@ export default function SubjectsPage() {
     }
   }
 
-  // The list endpoint does not include enrollment counts, so fetch them per subject.
+  // The list endpoint does not include enrollment or section counts, so fetch them.
   const loadEnrolledCounts = async (list) => {
     if (!isAdmin) return
     const entries = await Promise.all(
       list.map(async (s) => {
         try {
-          const res = await api.get(`/subjects/${s.id}/students/`)
-          return [s.id, res.data.count]
+          const [enrolledRes, sectionsRes] = await Promise.all([
+            api.get(`/subjects/${s.id}/students/`),
+            api.get('/sections/', { params: { subject: s.id, page_size: 100 } }),
+          ])
+          return [s.id, enrolledRes.data.count, (sectionsRes.data.results || []).length]
         } catch {
-          return [s.id, null]
+          return [s.id, null, null]
         }
       })
     )
-    setEnrolledCounts(Object.fromEntries(entries))
+    setEnrolledCounts(Object.fromEntries(entries.map(([id, count]) => [id, count ?? 0])))
+    setSectionCounts(Object.fromEntries(entries.map(([id, , sc]) => [id, sc ?? 0])))
+  }
+
+  const openSections = async (subject) => {
+    setSectionSubject(subject)
+    setSectionForm({ code: '', capacity: 40, instructor: '' })
+    setShowSectionModal(true)
+    try {
+      const res = await api.get('/sections/', { params: { subject: subject.id, page_size: 100 } })
+      setSections(res.data.results || res.data || [])
+    } catch (err) {
+      console.error('Sections fetch error:', err)
+      setSections([])
+    }
+  }
+
+  const handleAddSection = async (e) => {
+    e.preventDefault()
+    if (!sectionForm.code.trim()) return
+    setSavingSection(true)
+    try {
+      const res = await api.post('/sections/', {
+        subject: sectionSubject.id,
+        code: sectionForm.code.trim().toUpperCase(),
+        capacity: parseInt(sectionForm.capacity, 10) || 40,
+        instructor: sectionForm.instructor || null,
+      })
+      addToast(`Created section ${sectionSubject.code}-${res.data.code}`, 'success')
+      setSectionForm({ code: '', capacity: 40, instructor: '' })
+      const listRes = await api.get('/sections/', {
+        params: { subject: sectionSubject.id, page_size: 100 },
+      })
+      setSections(listRes.data.results || [])
+      setSectionCounts((prev) => ({ ...prev, [sectionSubject.id]: sections.length + 1 }))
+    } catch (err) {
+      addToast(err.response?.data?.code?.[0] || 'Failed to create section', 'error')
+    } finally {
+      setSavingSection(false)
+    }
+  }
+
+  const handleDeleteSection = async (section) => {
+    if (
+      !window.confirm(
+        `Delete section ${section.code}? Its students keep the subject but lose this class.`
+      )
+    )
+      return
+    try {
+      await api.delete(`/sections/${section.id}/`)
+      setSections((prev) => prev.filter((s) => s.id !== section.id))
+      setSectionCounts((prev) => ({ ...prev, [sectionSubject.id]: sections.length - 1 }))
+      addToast(`Deleted section ${section.code}`, 'success')
+    } catch (err) {
+      addToast('Failed to delete section', 'error')
+    }
   }
 
   const openEnrollment = async (subject) => {
@@ -256,7 +321,8 @@ export default function SubjectsPage() {
                 <th>Name</th>
                 <th>Units</th>
                 <th>Instructor</th>
-                <th>Students</th>
+                <th>Sections</th>
+                <th>Enrolled</th>
                 {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
@@ -270,10 +336,20 @@ export default function SubjectsPage() {
                   <td>
                     <button
                       className="btn btn-ghost btn-sm"
+                      onClick={() => openSections(s)}
+                      title="Manage sections of this subject"
+                      id={`manage-sections-${s.code}`}
+                    >
+                      {sectionCounts[s.id] ?? 0} section{sectionCounts[s.id] === 1 ? '' : 's'}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-secondary btn-sm"
                       onClick={() => openEnrollment(s)}
                       id={`manage-students-${s.code}`}
                     >
-                      <IconStudents /> {enrolledCounts[s.id] ?? '—'}
+                      <IconStudents /> {enrolledCounts[s.id] ?? 0}
                     </button>
                   </td>
                   {isAdmin && (
@@ -383,6 +459,108 @@ export default function SubjectsPage() {
         </Modal>
       )}
 
+      {showSectionModal && sectionSubject && (
+        <Modal
+          title={`Sections of ${sectionSubject.code}`}
+          onClose={() => setShowSectionModal(false)}
+          footer={
+            <button className="btn btn-secondary" onClick={() => setShowSectionModal(false)}>
+              Done
+            </button>
+          }
+        >
+          <p className="form-hint" style={{ marginBottom: 'var(--space-4)' }}>
+            A section is one class group of this subject. Each section meets at its own
+            time, so you can run several at once.
+          </p>
+
+          <div className="chip-list" style={{ marginBottom: 'var(--space-4)' }}>
+            {sections.length === 0 ? (
+              <span style={{ color: 'var(--color-gray-500)', fontSize: 'var(--font-sm)' }}>
+                No sections yet.
+              </span>
+            ) : (
+              sections.map((s) => (
+                <span key={s.id} className="chip">
+                  {sectionSubject.code}-{s.code} · {s.enrolled_count}/{s.capacity}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="chip-remove"
+                      title={`Delete section ${s.code}`}
+                      onClick={() => handleDeleteSection(s)}
+                    >
+                      &times;
+                    </button>
+                  )}
+                </span>
+              ))
+            )}
+          </div>
+
+          {isAdmin && (
+            <form onSubmit={handleAddSection} className="form-row" id="add-section-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="section-code">
+                  New section code
+                </label>
+                <input
+                  id="section-code"
+                  className="form-input"
+                  value={sectionForm.code}
+                  onChange={(e) => setSectionForm({ ...sectionForm, code: e.target.value })}
+                  placeholder="A"
+                  maxLength={20}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="section-capacity">
+                  Capacity
+                </label>
+                <input
+                  id="section-capacity"
+                  className="form-input"
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={sectionForm.capacity}
+                  onChange={(e) => setSectionForm({ ...sectionForm, capacity: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="section-instructor">
+                  Instructor
+                </label>
+                <select
+                  id="section-instructor"
+                  className="form-select"
+                  value={sectionForm.instructor}
+                  onChange={(e) => setSectionForm({ ...sectionForm, instructor: e.target.value })}
+                >
+                  <option value="">Unassigned</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.first_name ? `${t.first_name} ${t.last_name}` : t.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={savingSection}
+                  id="add-section-btn"
+                >
+                  {savingSection ? <span className="spinner" /> : <IconPlus />} Add section
+                </button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
+
       {showEnrollModal && enrollSubject && (
         <Modal
           title={`Students in ${enrollSubject.code}`}
@@ -414,7 +592,7 @@ export default function SubjectsPage() {
         >
           <div className="form-group">
             <label className="form-label" htmlFor="student-search">
-              Add students to this subject
+              Add students to {enrollSubject.code}
             </label>
             <input
               id="student-search"
@@ -424,6 +602,10 @@ export default function SubjectsPage() {
               value={studentSearch}
               onChange={(e) => setStudentSearch(e.target.value)}
             />
+            <p className="form-hint">
+              Tick any number of students, then choose Enroll or Remove. Everyone in this
+              subject shares one class time.
+            </p>
           </div>
 
           <div className="student-picker" id="subject-student-picker">
