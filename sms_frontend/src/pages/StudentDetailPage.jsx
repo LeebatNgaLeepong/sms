@@ -5,6 +5,7 @@ import { IconChevronLeft, IconPlus, IconEdit } from '../components/Icons'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
+import { gradeBadgeClass, gpaColor } from '../utils/grades'
 
 export default function StudentDetailPage() {
   const { id } = useParams()
@@ -69,13 +70,19 @@ export default function StudentDetailPage() {
   const handleSaveEnrollment = async () => {
     setSavingEnrollment(true)
     try {
-      await api.post(`/students/${id}/enroll/`, {
+      const res = await api.post(`/students/${id}/enroll/`, {
         subject_ids: selectedSubjectIds,
       })
-      addToast('Enrollment updated successfully', 'success')
+      const scheduled = res.data?.scheduled_count
+      addToast(
+        scheduled === undefined
+          ? 'Enrollment updated successfully'
+          : `Enrollment updated — ${scheduled} class${scheduled === 1 ? '' : 'es'} scheduled`,
+        'success'
+      )
       setShowEnrollModal(false)
-      const res = await api.get(`/students/${id}/enrolled/`)
-      setEnrolledSubjects(res.data.enrolled_subjects || [])
+      const enrolledRes = await api.get(`/students/${id}/enrolled/`)
+      setEnrolledSubjects(enrolledRes.data.enrolled_subjects || [])
     } catch (err) {
       console.error('Enrollment save error:', err)
       const msg = err.response?.data?.detail || 'Failed to update enrollment.'
@@ -97,7 +104,6 @@ export default function StudentDetailPage() {
     return <div className="loading-page">Student not found.</div>
   }
 
-  const letterClass = (letter) => `badge badge-${letter.toLowerCase()}`
   const totalEnrolledUnits = enrolledSubjects.reduce((sum, s) => sum + (s.units || 0), 0)
 
   return (
@@ -128,9 +134,7 @@ export default function StudentDetailPage() {
         </div>
         <div className="detail-field">
           <div className="detail-field-label">GPA</div>
-          <div className="detail-field-value" style={{
-            color: data.gpa >= 3 ? 'var(--color-success)' : data.gpa >= 2 ? 'var(--color-gold-600)' : 'var(--color-error)'
-          }}>
+          <div className="detail-field-value" style={{ color: gpaColor(data.gpa) }}>
             {data.gpa.toFixed(2)}
           </div>
         </div>
@@ -234,7 +238,7 @@ export default function StudentDetailPage() {
                   <td>{g.subject.name}</td>
                   <td>{g.subject.units}</td>
                   <td>{g.score}</td>
-                  <td><span className={letterClass(g.letter)}>{g.letter}</span></td>
+                  <td><span className={gradeBadgeClass(g.letter)}>{g.letter}</span></td>
                   <td>{g.grade_points}</td>
                   <td style={{ color: 'var(--color-gray-500)' }}>{g.recorded_by || '—'}</td>
                 </tr>

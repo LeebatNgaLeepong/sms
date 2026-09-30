@@ -7,6 +7,7 @@ import {
   IconGrades,
   IconTeacher,
   IconLogout,
+  IconCalendar,
 } from './Icons'
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -39,6 +40,12 @@ export default function Sidebar({ isOpen, onClose }) {
       to: '/subjects',
       label: 'Subjects',
       icon: <IconSubjects />,
+      show: true,
+    },
+    {
+      to: '/schedules',
+      label: 'Schedules',
+      icon: <IconCalendar />,
       show: true,
     },
     {

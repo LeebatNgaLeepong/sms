@@ -118,23 +118,41 @@ class StudentViewSet(viewsets.ModelViewSet):
     def enroll(self, request, pk=None):
         """
         POST/PUT /api/students/{id}/enroll/
-        Body: {"subject_ids": [1, 2, 3]}
+        Body: {"subject_ids": [1, 2, 3], "semester": "...", "school_year": "..."}
         Replaces the student's enrolled subjects with the given list.
+        Automatically generates conflict-free class schedules for the enrolled subjects.
         Admin-only.
         """
         if request.user.role not in ['admin'] and not request.user.is_superuser:
             return Response({'detail': 'Only admins can modify enrollments.'}, status=403)
 
         student = self.get_object()
-        subject_ids = request.data.get('subject_ids', [])
+        # QueryDict (multipart/form-data) needs getlist() to keep every repeated id.
+        if hasattr(request.data, 'getlist'):
+            subject_ids = request.data.getlist('subject_ids')
+        else:
+            subject_ids = request.data.get('subject_ids', [])
+        if not isinstance(subject_ids, (list, tuple)):
+            subject_ids = [subject_ids]
+        semester = request.data.get('semester', '')
+        school_year = request.data.get('school_year', '')
 
         try:
             subjects = Subject.objects.filter(id__in=subject_ids)
             student.enrolled_subjects.set(subjects)
+
+            # Auto-generate schedules for the enrolled subjects
+            from schedules.scheduler import regenerate_student_schedule
+            schedule_result = regenerate_student_schedule(
+                student, semester=semester, school_year=school_year
+            )
+
+            scheduled_count = sum(1 for r in schedule_result if r['time_slot'] is not None)
             return Response({
                 'student_id': student.id,
                 'enrolled_count': subjects.count(),
-                'detail': 'Enrollment updated successfully.',
+                'scheduled_count': scheduled_count,
+                'detail': 'Enrollment updated successfully. Schedules auto-generated.',
             })
         except Exception as e:
             return Response({'detail': str(e)}, status=400)

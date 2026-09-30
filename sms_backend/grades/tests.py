@@ -1,7 +1,7 @@
 """
 Tests for grades app.
 Validates business logic:
-- Server-side score -> letter -> grade_points computation
+- Server-side score -> grade_points computation (University of Antique 1.0-5.0 scale)
 - Score range constraints (0 to 100)
 - Teacher course assignment constraint
 - Student read-only isolation
@@ -66,20 +66,34 @@ class GradeLogicAndAPITests(APITestCase):
             instructor=self.teacher2,
         )
 
-    def test_score_to_letter_and_points_computation(self):
-        # 95 -> A (4.00)
+    def test_score_to_grade_points_computation(self):
+        # 99 -> 1.00 (best)
         g1 = Grade.objects.create(
-            student=self.student, subject=self.cs_subject, score=Decimal('95.00')
+            student=self.student, subject=self.cs_subject, score=Decimal('99.00')
         )
-        self.assertEqual(g1.letter, 'A')
-        self.assertEqual(g1.grade_points, Decimal('4.00'))
+        self.assertEqual(g1.letter, '1.00')
+        self.assertEqual(g1.grade_points, Decimal('1.00'))
 
-        # 85 -> B (3.00)
+        # 87 -> 2.00
         g2 = Grade.objects.create(
-            student=self.other_student, subject=self.cs_subject, score=Decimal('85.00')
+            student=self.other_student, subject=self.cs_subject, score=Decimal('87.00')
         )
-        self.assertEqual(g2.letter, 'B')
-        self.assertEqual(g2.grade_points, Decimal('3.00'))
+        self.assertEqual(g2.letter, '2.00')
+        self.assertEqual(g2.grade_points, Decimal('2.00'))
+
+        # 75 -> 3.00 (passing)
+        g3 = Grade.objects.create(
+            student=self.student, subject=self.math_subject, score=Decimal('75.00')
+        )
+        self.assertEqual(g3.letter, '3.00')
+        self.assertEqual(g3.grade_points, Decimal('3.00'))
+
+        # 65 -> 5.00 (fail)
+        g4 = Grade.objects.create(
+            student=self.other_student, subject=self.math_subject, score=Decimal('65.00')
+        )
+        self.assertEqual(g4.letter, '5.00')
+        self.assertEqual(g4.grade_points, Decimal('5.00'))
 
     def test_server_ignores_client_supplied_letter_and_points(self):
         self.client.force_authenticate(user=self.admin)
@@ -87,12 +101,12 @@ class GradeLogicAndAPITests(APITestCase):
             'student': self.student.id,
             'subject': self.cs_subject.id,
             'score': '75.00',
-            'letter': 'A',           # Client attempts to cheat
-            'grade_points': '4.00',  # Client attempts to cheat
+            'letter': '1.00',           # Client attempts to cheat
+            'grade_points': '1.00',     # Client attempts to cheat
         })
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(res.data['letter'], 'C')
-        self.assertEqual(Decimal(res.data['grade_points']), Decimal('2.00'))
+        self.assertEqual(res.data['letter'], '3.00')
+        self.assertEqual(Decimal(res.data['grade_points']), Decimal('3.00'))
 
     def test_score_validation_out_of_range(self):
         self.client.force_authenticate(user=self.admin)

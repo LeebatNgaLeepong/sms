@@ -8,6 +8,7 @@ import {
   IconTeacher,
   IconPercent,
 } from '../components/Icons'
+import { GRADE_POINT_ORDER, gradeColor, gradeDescription, gpaColor } from '../utils/grades'
 
 export default function DashboardPage() {
   const [data, setData] = useState(null)
@@ -42,14 +43,8 @@ export default function DashboardPage() {
     return <div className="loading-page">Failed to load dashboard data.</div>
   }
 
-  const maxGrade = Math.max(
-    data.grade_distribution.A,
-    data.grade_distribution.B,
-    data.grade_distribution.C,
-    data.grade_distribution.D,
-    data.grade_distribution.F,
-    1
-  )
+  const distribution = data.grade_distribution || {}
+  const maxGrade = Math.max(...GRADE_POINT_ORDER.map((key) => distribution[key] || 0), 1)
 
   return (
     <div>
@@ -115,18 +110,19 @@ export default function DashboardPage() {
       <div className="chart-card">
         <h3 className="chart-card-title">Grade Distribution</h3>
         <div className="grade-bars">
-          {['A', 'B', 'C', 'D', 'F'].map((letter) => (
-            <div key={letter} className="grade-bar-row">
-              <span className="grade-bar-label">{letter}</span>
+          {GRADE_POINT_ORDER.map((key) => (
+            <div key={key} className="grade-bar-row" title={gradeDescription(key)}>
+              <span className="grade-bar-label">{key}</span>
               <div className="grade-bar-track">
                 <div
-                  className={`grade-bar-fill ${letter.toLowerCase()}`}
+                  className="grade-bar-fill"
                   style={{
-                    width: `${(data.grade_distribution[letter] / maxGrade) * 100}%`,
+                    width: `${((distribution[key] || 0) / maxGrade) * 100}%`,
+                    background: gradeColor(key),
                   }}
                 />
               </div>
-              <span className="grade-bar-count">{data.grade_distribution[letter]}</span>
+              <span className="grade-bar-count">{distribution[key] || 0}</span>
             </div>
           ))}
         </div>

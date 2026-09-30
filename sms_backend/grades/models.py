@@ -1,6 +1,19 @@
 """
 Grades models for College Student Management System.
-Includes automatic computation of letter grades and grade points from numerical scores.
+Implements University of Antique grading scale (Philippine 1.0-5.0 system).
+
+Grading Scale:
+  1.00 = 98-100 (Excellent)
+  1.25 = 95-97
+  1.50 = 92-94
+  1.75 = 89-91
+  2.00 = 86-88
+  2.25 = 83-85
+  2.50 = 80-82
+  2.75 = 77-79
+  3.00 = 75-76 (Passing)
+  4.00 = Incomplete (INC)
+  5.00 = below 75 (Fail)
 """
 
 from decimal import Decimal
@@ -11,30 +24,36 @@ from django.db import models
 
 def compute_grade_details(score: Decimal | float) -> tuple[str, Decimal]:
     """
-    Derive letter grade and grade points server-side from score.
-      90–100   = A (4.00)
-      80–89.99 = B (3.00)
-      70–79.99 = C (2.00)
-      60–69.99 = D (1.00)
-      below 60 = F (0.00)
+    Derive University of Antique grade points server-side from score.
+    Uses the Philippine 1.0-5.0 grading scale.
     """
     score_val = Decimal(str(score))
-    if score_val >= Decimal('90.00'):
-        return 'A', Decimal('4.00')
+    if score_val >= Decimal('98.00'):
+        return '1.00', Decimal('1.00')
+    elif score_val >= Decimal('95.00'):
+        return '1.25', Decimal('1.25')
+    elif score_val >= Decimal('92.00'):
+        return '1.50', Decimal('1.50')
+    elif score_val >= Decimal('89.00'):
+        return '1.75', Decimal('1.75')
+    elif score_val >= Decimal('86.00'):
+        return '2.00', Decimal('2.00')
+    elif score_val >= Decimal('83.00'):
+        return '2.25', Decimal('2.25')
     elif score_val >= Decimal('80.00'):
-        return 'B', Decimal('3.00')
-    elif score_val >= Decimal('70.00'):
-        return 'C', Decimal('2.00')
-    elif score_val >= Decimal('60.00'):
-        return 'D', Decimal('1.00')
+        return '2.50', Decimal('2.50')
+    elif score_val >= Decimal('77.00'):
+        return '2.75', Decimal('2.75')
+    elif score_val >= Decimal('75.00'):
+        return '3.00', Decimal('3.00')
     else:
-        return 'F', Decimal('0.00')
+        return '5.00', Decimal('5.00')
 
 
 class Grade(models.Model):
     """
     Grade model associating a Student and Subject with a validated score,
-    auto-computed letter grade, and grade points.
+    auto-computed University of Antique grade points.
     """
 
     student = models.ForeignKey(
@@ -59,15 +78,15 @@ class Grade(models.Model):
         help_text="Numerical score between 0.00 and 100.00.",
     )
     letter = models.CharField(
-        max_length=2,
+        max_length=5,
         editable=False,
-        help_text="Auto-computed letter grade (A, B, C, D, F).",
+        help_text="Auto-computed University of Antique grade (1.00, 1.25, ..., 5.00).",
     )
     grade_points = models.DecimalField(
         max_digits=3,
         decimal_places=2,
         editable=False,
-        help_text="Auto-computed grade points (4.00, 3.00, 2.00, 1.00, 0.00).",
+        help_text="Auto-computed grade points (1.00=best, 3.00=pass, 4.00=incomplete, 5.00=fail).",
     )
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

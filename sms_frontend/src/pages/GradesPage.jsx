@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import { IconSearch, IconPlus, IconEdit, IconTrash } from '../components/Icons'
+import { gradeBadgeClass, gradeDescription } from '../utils/grades'
 
 export default function GradesPage() {
   const [grades, setGrades] = useState([])
@@ -142,7 +143,6 @@ export default function GradesPage() {
     fetchGrades()
   }
 
-  const letterClass = (letter) => `badge badge-${letter.toLowerCase()}`
   const totalPages = Math.ceil(totalCount / 10)
 
   return (
@@ -264,7 +264,7 @@ export default function GradesPage() {
                     </div>
                   </td>
                   <td>{g.score}</td>
-                  <td><span className={letterClass(g.letter)}>{g.letter}</span></td>
+                  <td><span className={gradeBadgeClass(g.letter)} title={gradeDescription(g.letter)}>{g.letter}</span></td>
                   <td>{g.grade_points}</td>
                   <td style={{ color: 'var(--color-gray-500)' }}>{g.recorded_by_username || '—'}</td>
                   {canModify && (

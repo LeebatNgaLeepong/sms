@@ -35,11 +35,11 @@ class DashboardSummaryTests(APITestCase):
         self.subject1 = Subject.objects.create(code="CS101", name="CS 1", units=3, instructor=self.teacher)
         self.subject2 = Subject.objects.create(code="CS102", name="CS 2", units=3, instructor=self.teacher)
 
-        # Alice: 95 (A, 4.00), GPA = 4.00
+# Alice: 95 (1.25), GPA = 1.25
         Grade.objects.create(student=self.student1, subject=self.subject1, score=Decimal('95.00'))
-        # Bob: 85 (B, 3.00), GPA = 3.00
+        # Bob: 85 (2.25), GPA = 2.25
         Grade.objects.create(student=self.student2, subject=self.subject2, score=Decimal('85.00'))
-        # Expected Average GPA across students = (4.00 + 3.00) / 2 = 3.50
+        # Expected Average GPA across students = (1.25 + 2.25) / 2 = 1.75
 
     def test_unauthenticated_forbidden(self):
         res = self.client.get(reverse('dashboard_summary'))
@@ -52,7 +52,7 @@ class DashboardSummaryTests(APITestCase):
         self.assertEqual(res.data['total_students'], 2)
         self.assertEqual(res.data['total_subjects'], 2)
         self.assertEqual(res.data['total_grades'], 2)
-        self.assertEqual(res.data['average_gpa'], 3.50)
+        self.assertEqual(res.data['average_gpa'], 1.75)
         self.assertIn('grade_distribution', res.data)
-        self.assertEqual(res.data['grade_distribution']['A'], 1)
-        self.assertEqual(res.data['grade_distribution']['B'], 1)
+        self.assertEqual(res.data['grade_distribution']['1.25'], 1)
+        self.assertEqual(res.data['grade_distribution']['2.25'], 1)

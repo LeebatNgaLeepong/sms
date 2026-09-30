@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import { IconSearch, IconPlus, IconEdit, IconTrash, IconEye } from '../components/Icons'
+import { gpaColor } from '../utils/grades'
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([])
@@ -151,7 +152,7 @@ export default function StudentsPage() {
                   <td>{s.program}</td>
                   <td>{s.year_level}</td>
                   <td>
-                    <span style={{ fontWeight: 600, color: s.gpa >= 3 ? 'var(--color-success)' : s.gpa >= 2 ? 'var(--color-gold-600)' : 'var(--color-error)' }}>
+                    <span style={{ fontWeight: 600, color: gpaColor(s.gpa) }}>
                       {(s.gpa || 0).toFixed(2)}
                     </span>
                   </td>

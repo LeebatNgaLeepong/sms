@@ -85,13 +85,14 @@ class Student(models.Model):
     def gpa(self) -> float:
         """
         Computed GPA = average of grade_points across all Grade records (rounded to 2 decimals).
-        Returns 0.00 if student has no recorded grades.
+        Uses University of Antique scale (1.00 = best, 5.00 = fail).
+        Returns 5.00 if student has no recorded grades (no subjects attempted).
         """
         grades = self.grades.all()
         if not grades.exists():
-            return 0.00
+            return 5.00
         avg_points = grades.aggregate(models.Avg('grade_points'))['grade_points__avg']
-        return round(float(avg_points or 0.0), 2)
+        return round(float(avg_points or 5.00), 2)
 
     def __str__(self) -> str:
         return f"{self.id} - {self.name}"

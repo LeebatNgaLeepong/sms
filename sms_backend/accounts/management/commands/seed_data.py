@@ -213,21 +213,21 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Created students: Alice, Bob, Charlie, Diana, Edward"))
 
-        # 5. Create Sample Grades
+        # 5. Create Sample Grades (University of Antique 1.0-5.0 scale)
         grades_data = [
             # Alice: Excellent grades
-            (stu_alice, cs101, Decimal('94.50'), teacher_smith),
-            (stu_alice, cs201, Decimal('88.00'), teacher_smith),
-            (stu_alice, math101, Decimal('91.00'), teacher_jones),
+            (stu_alice, cs101, Decimal('99.00'), teacher_smith),   # 1.00
+            (stu_alice, cs201, Decimal('87.00'), teacher_smith),   # 2.00
+            (stu_alice, math101, Decimal('93.00'), teacher_jones),  # 1.50
             # Bob: Mixed grades
-            (stu_bob, cs101, Decimal('78.50'), teacher_smith),
-            (stu_bob, math101, Decimal('65.00'), teacher_jones),
-            (stu_bob, eng101, Decimal('82.00'), teacher_jones),
+            (stu_bob, cs101, Decimal('78.00'), teacher_smith),     # 2.75
+            (stu_bob, math101, Decimal('65.00'), teacher_jones),   # 5.00 (Fail)
+            (stu_bob, eng101, Decimal('81.00'), teacher_jones),    # 2.50
             # Charlie: Needs improvement
-            (stu_charlie, cs101, Decimal('54.00'), teacher_smith),
-            (stu_charlie, eng101, Decimal('72.00'), teacher_jones),
+            (stu_charlie, cs101, Decimal('55.00'), teacher_smith), # 5.00 (Fail)
+            (stu_charlie, eng101, Decimal('75.00'), teacher_jones),# 3.00 (Pass)
             # Diana
-            (stu_diana, math101, Decimal('98.00'), teacher_jones),
+            (stu_diana, math101, Decimal('98.00'), teacher_jones), # 1.00
         ]
 
         for student, subject, score, teacher in grades_data:
@@ -241,4 +241,64 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("Recorded sample grades for students."))
+
+        # 6. Create Sample Time Slots (7:00 AM - 8:00 PM, Mon-Sun)
+        from schedules.models import TimeSlot, StudentSchedule
+        time_slots_data = [
+            # Monday slots
+            ('Mon', '07:00', 2, 'lec'), ('Mon', '09:00', 2, 'lec'),
+            ('Mon', '11:00', 2, 'lab'), ('Mon', '13:00', 2, 'lec'),
+            ('Mon', '15:00', 2, 'lec'), ('Mon', '17:00', 2, 'lab'),
+            # Tuesday slots
+            ('Tue', '07:00', 2, 'lec'), ('Tue', '09:00', 2, 'lab'),
+            ('Tue', '11:00', 2, 'lec'), ('Tue', '13:00', 2, 'lec'),
+            ('Tue', '15:00', 2, 'lec'), ('Tue', '17:00', 2, 'lab'),
+            # Wednesday slots
+            ('Wed', '07:00', 2, 'lec'), ('Wed', '09:00', 2, 'lec'),
+            ('Wed', '11:00', 2, 'lab'), ('Wed', '13:00', 2, 'lec'),
+            ('Wed', '15:00', 2, 'lec'), ('Wed', '17:00', 2, 'lab'),
+            # Thursday slots
+            ('Thu', '07:00', 2, 'lec'), ('Thu', '09:00', 2, 'lec'),
+            ('Thu', '11:00', 2, 'lab'), ('Thu', '13:00', 2, 'lec'),
+            ('Thu', '15:00', 2, 'lec'), ('Thu', '17:00', 2, 'lab'),
+            # Friday slots
+            ('Fri', '07:00', 2, 'lec'), ('Fri', '09:00', 2, 'lec'),
+            ('Fri', '11:00', 2, 'lab'), ('Fri', '13:00', 2, 'lec'),
+            ('Fri', '15:00', 2, 'lec'), ('Fri', '17:00', 2, 'lab'),
+        ]
+        from datetime import time
+        for day, start_str, duration, slot_type in time_slots_data:
+            h, m = map(int, start_str.split(':'))
+            TimeSlot.objects.get_or_create(
+                day=day,
+                start_time=time(h, m),
+                duration_hours=duration,
+                slot_type=slot_type,
+            )
+
+        self.stdout.write(self.style.SUCCESS("Created sample time slots."))
+
+        # 7. Enroll students in subjects, then generate conflict-free schedules
+        enrollment_map = {
+            stu_alice: [cs101, cs201, math101, eng101],
+            stu_bob: [cs101, math101, eng101, phy101],
+            stu_charlie: [cs101, eng101, math101],
+            stu_diana: [math101, cs201, phy101],
+            stu_edward: [cs101, cs201, eng101, math101],
+        }
+        for student, subject_list in enrollment_map.items():
+            student.enrolled_subjects.set(subject_list)
+        self.stdout.write(self.style.SUCCESS("Enrolled students in subjects."))
+
+        from schedules.scheduler import regenerate_student_schedule
+        scheduled_total = 0
+        for student, subject_list in enrollment_map.items():
+            result = regenerate_student_schedule(
+                student, semester='1st Sem 2026', school_year='2025-2026'
+            )
+            scheduled_total += sum(1 for r in result if r['time_slot'] is not None)
+
+        self.stdout.write(
+            self.style.SUCCESS(f"Created {scheduled_total} sample schedule entries for students.")
+        )
         self.stdout.write(self.style.SUCCESS("Database seeding completed successfully!"))

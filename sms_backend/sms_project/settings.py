@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'students.apps.StudentsConfig',
     'subjects.apps.SubjectsConfig',
     'grades.apps.GradesConfig',
+    'schedules.apps.ScheduleConfig',
     'dashboard.apps.DashboardConfig',
 ]
 

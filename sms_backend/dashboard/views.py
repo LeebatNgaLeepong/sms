@@ -46,23 +46,27 @@ class DashboardSummaryView(APIView):
         else:
             average_gpa = 0.00
 
-        # Grade distribution breakdown
+        # Grade distribution breakdown (University of Antique scale)
         distribution_counts = (
-            Grade.objects.values('letter')
-            .annotate(count=Count('id'))
-            .order_by('letter')
+            Grade.objects.values('letter').annotate(count=Count('id')).order_by('letter')
         )
-        distribution_dict = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0}
+        distribution_dict = {
+            '1.00': 0, '1.25': 0, '1.50': 0, '1.75': 0,
+            '2.00': 0, '2.25': 0, '2.50': 0, '2.75': 0,
+            '3.00': 0, '5.00': 0,
+        }
         for item in distribution_counts:
             letter = item['letter']
             if letter in distribution_dict:
                 distribution_dict[letter] = item['count']
 
+        # Passing grades are 1.00-3.00; 5.00 is fail
         passing_grades_count = (
-            distribution_dict['A']
-            + distribution_dict['B']
-            + distribution_dict['C']
-            + distribution_dict['D']
+            distribution_dict['1.00'] + distribution_dict['1.25'] +
+            distribution_dict['1.50'] + distribution_dict['1.75'] +
+            distribution_dict['2.00'] + distribution_dict['2.25'] +
+            distribution_dict['2.50'] + distribution_dict['2.75'] +
+            distribution_dict['3.00']
         )
         passing_rate = (
             round((passing_grades_count / total_grades) * 100, 1)
