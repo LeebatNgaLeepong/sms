@@ -230,8 +230,10 @@ class Command(BaseCommand):
             (stu_diana, math101, Decimal('98.00'), teacher_jones), # 1.00
         ]
 
+        # update_or_create so re-seeding repairs rows left over from an older
+        # grading scale; Grade.save() recomputes letter and points from score.
         for student, subject, score, teacher in grades_data:
-            grade, _ = Grade.objects.get_or_create(
+            Grade.objects.update_or_create(
                 student=student,
                 subject=subject,
                 defaults={

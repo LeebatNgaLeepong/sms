@@ -56,3 +56,17 @@ class DashboardSummaryTests(APITestCase):
         self.assertIn('grade_distribution', res.data)
         self.assertEqual(res.data['grade_distribution']['1.25'], 1)
         self.assertEqual(res.data['grade_distribution']['2.25'], 1)
+
+    def test_passing_rate_counts_passes_only(self):
+        """A 5.00 (fail) must drag the passing rate down but not zero it out."""
+        Grade.objects.create(
+            student=self.student1,
+            subject=self.subject2,
+            score=Decimal('60.00'),
+        )
+        # 1.25, 2.25, 5.00 -> 2 of 3 pass
+        self.client.force_authenticate(user=self.user)
+        res = self.client.get(reverse('dashboard_summary'))
+        self.assertEqual(res.data['total_grades'], 3)
+        self.assertEqual(res.data['grade_distribution']['5.00'], 1)
+        self.assertEqual(res.data['passing_rate'], 66.7)

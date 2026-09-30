@@ -3,10 +3,6 @@ Schedule generation utilities.
 Provides automatic conflict-free class schedule generation for students.
 """
 
-from datetime import timedelta
-
-from django.db.models import Q
-
 from .models import StudentSchedule, TimeSlot
 
 # Chronological weekday order. Model-level ordering is alphabetical by day code,

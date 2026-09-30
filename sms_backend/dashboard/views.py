@@ -5,7 +5,7 @@ Provides summary metrics including counts, system-wide average GPA, and grade di
 
 from decimal import Decimal
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count
+from django.db.models import Count
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -60,14 +60,11 @@ class DashboardSummaryView(APIView):
             if letter in distribution_dict:
                 distribution_dict[letter] = item['count']
 
-        # Passing grades are 1.00-3.00; 5.00 is fail
-        passing_grades_count = (
-            distribution_dict['1.00'] + distribution_dict['1.25'] +
-            distribution_dict['1.50'] + distribution_dict['1.75'] +
-            distribution_dict['2.00'] + distribution_dict['2.25'] +
-            distribution_dict['2.50'] + distribution_dict['2.75'] +
-            distribution_dict['3.00']
-        )
+        # Passing grades are 1.00-3.00; 5.00 is fail. Counted from grade_points
+        # rather than the letter dict so an unrecognised letter cannot skew it.
+        passing_grades_count = Grade.objects.filter(
+            grade_points__lte=Decimal('3.00')
+        ).count()
         passing_rate = (
             round((passing_grades_count / total_grades) * 100, 1)
             if total_grades > 0

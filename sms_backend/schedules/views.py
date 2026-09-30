@@ -2,16 +2,15 @@
 ViewSets for schedules app.
 """
 
-from django.db import transaction
 from django.db.models import Case, IntegerField, Value, When
-from rest_framework import filters, pagination, status, viewsets
+from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import IsAdmin
 from .models import StudentSchedule, TimeSlot
-from .scheduler import DAY_ORDER, generate_schedule_for_subjects, regenerate_student_schedule
+from .scheduler import DAY_ORDER, regenerate_student_schedule
 from .serializers import StudentScheduleSerializer, TimeSlotSerializer
 
 
