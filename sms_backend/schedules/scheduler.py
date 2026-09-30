@@ -1,6 +1,10 @@
 """
 Schedule generation utilities.
-Provides automatic conflict-free class schedule generation for students.
+
+A course meets at one time per term, shared by every student enrolled in it, so
+scheduling is driven from the subject outwards rather than per student. Slot
+selection still respects each individual student's other classes, so a subject
+only takes a time that is free for all of its students.
 """
 
 from .models import DAY_ORDER, StudentSchedule, TimeSlot
@@ -27,27 +31,14 @@ def order_slots_by_preference(slots, start_offset=0):
     if not days:
         return sorted(slots, key=slot_sort_key)
 
-    grouped = {day: sorted((s for s in slots if s.day == day), key=lambda s: s.start_time) for day in days}
+    grouped = {
+        day: sorted((s for s in slots if s.day == day), key=lambda s: s.start_time)
+        for day in days
+    }
     ordered = []
     for step in range(len(days)):
         ordered.extend(grouped[days[(start_offset + step) % len(days)]])
     return ordered
-
-
-def get_available_slots(student, semester=None, school_year=None):
-    """
-    Return all time slots that are NOT currently occupied by the student's
-    existing schedules (for the given semester/year).
-    """
-    qs = TimeSlot.objects.all()
-    existing = StudentSchedule.objects.filter(
-        student=student,
-        semester=semester,
-        school_year=school_year,
-    ).values_list('time_slot_id', flat=True)
-    if existing:
-        qs = qs.exclude(id__in=list(existing))
-    return qs
 
 
 def slots_overlap(slot_a, slot_b):
@@ -56,133 +47,219 @@ def slots_overlap(slot_a, slot_b):
     """
     if slot_a.day != slot_b.day:
         return False
-    a_start = slot_a.start_time
-    a_end = slot_a.end_time
-    b_start = slot_b.start_time
-    b_end = slot_b.end_time
+    a_start, a_end = slot_a.start_time, slot_a.end_time
+    b_start, b_end = slot_b.start_time, slot_b.end_time
     # Overlap if one starts before the other ends
     return a_start < b_end and b_start < a_end
 
 
-def get_student_busy_slots(student, semester=None, school_year=None):
-    """
-    Return the set of time slots that the student is already scheduled in.
-    """
-    busy = set()
-    existing_schedules = StudentSchedule.objects.filter(
+def get_student_busy_slots(student, semester=None, school_year=None, exclude_subject=None):
+    """Return the time slots a student is already scheduled in for the term."""
+    existing = StudentSchedule.objects.filter(
         student=student,
         semester=semester,
         school_year=school_year,
     ).select_related('time_slot')
-    for sched in existing_schedules:
+    if exclude_subject is not None:
+        existing = existing.exclude(subject=exclude_subject)
+    return {sched.time_slot for sched in existing}
+
+
+def subject_students(subject):
+    return list(subject.enrolled_students.all())
+
+
+def subject_busy_slots(subject, semester=None, school_year=None):
+    """
+    Slots that are taken by some other subject, for any student in this subject.
+
+    A slot is only usable by this subject if it is free for every one of its
+    students, so the union of all their other classes is what matters.
+    """
+    students = subject_students(subject)
+    if not students:
+        return set()
+
+    busy = set()
+    schedules = StudentSchedule.objects.filter(
+        student__in=students,
+        semester=semester,
+        school_year=school_year,
+    ).exclude(subject=subject).select_related('time_slot')
+    for sched in schedules:
         busy.add(sched.time_slot)
     return busy
 
 
-def generate_schedule_for_subjects(student, subject_ids, semester='', school_year=''):
-    """
-    Automatically assign non-conflicting time slots to a student's enrolled subjects.
-
-    Strategy:
-      1. Collect the student's currently busy slots (existing schedules).
-      2. For each subject to schedule, find an available slot that does not
-         conflict with any busy slot.
-      3. If no non-conflicting slot exists, skip that subject (do not overwrite).
-      4. Assign slots in a round-robin fashion across days to distribute load.
-
-    Returns a list of dicts: [{'subject': subject, 'time_slot': slot or None, 'created': bool}]
-    """
+def subject_rotation_index(subject):
+    """Position of the subject among scheduled subjects, used to spread days."""
     from subjects.models import Subject
 
-    subjects = list(Subject.objects.filter(id__in=subject_ids))
-    busy_slots = get_student_busy_slots(student, semester=semester, school_year=school_year)
+    ids = list(
+        Subject.objects.filter(enrolled_students__isnull=False)
+        .distinct()
+        .order_by('code')
+        .values_list('id', flat=True)
+    )
+    try:
+        return ids.index(subject.id)
+    except ValueError:
+        return 0
 
-    # All available time slots in chronological order
-    all_slots = sorted(TimeSlot.objects.all(), key=slot_sort_key)
 
-    results = []
+def find_slot_for_subject(subject, semester=None, school_year=None):
+    """
+    Choose one time slot for a subject that is free for all of its students.
 
-    # Track slots we assign in this run to avoid self-conflict
-    newly_assigned = set()
+    The slot the subject already uses is preferred so regenerating one student
+    does not needlessly move a class the rest of the cohort is in.
+    """
+    busy = subject_busy_slots(subject, semester, school_year)
 
-    for subject_index, subject in enumerate(subjects):
-        # Skip if already scheduled for this subject/semester/year
-        existing = StudentSchedule.objects.filter(
-            student=student,
+    current = (
+        StudentSchedule.objects.filter(
             subject=subject,
             semester=semester,
             school_year=school_year,
-        ).first()
-        if existing:
-            results.append({
-                'subject': subject,
-                'time_slot': existing.time_slot,
-                'created': False,
-            })
-            continue
+        )
+        .exclude(time_slot__isnull=True)
+        .select_related('time_slot')
+        .first()
+    )
 
-        # Find a slot that does not conflict with busy_slots or newly_assigned.
-        # Start the search on a rotating day so a full week is used.
-        assigned = None
-        for slot in order_slots_by_preference(all_slots, start_offset=subject_index):
-            # Check against existing busy slots
-            conflict = False
-            for busy in busy_slots:
-                if slots_overlap(slot, busy):
-                    conflict = True
-                    break
-            if conflict:
-                continue
-            # Check against newly assigned slots in this run
-            for new_slot in newly_assigned:
-                if slots_overlap(slot, new_slot):
-                    conflict = True
-                    break
-            if conflict:
-                continue
-            assigned = slot
-            break
+    candidates = []
+    if current is not None:
+        candidates.append(current.time_slot)
+    candidates.extend(
+        order_slots_by_preference(
+            sorted(TimeSlot.objects.all(), key=slot_sort_key),
+            start_offset=subject_rotation_index(subject),
+        )
+    )
 
-        if assigned:
-            schedule = StudentSchedule.objects.create(
-                student=student,
-                subject=subject,
-                time_slot=assigned,
-                semester=semester,
-                school_year=school_year,
-            )
-            busy_slots.add(assigned)
-            newly_assigned.add(assigned)
-            results.append({
-                'subject': subject,
-                'time_slot': assigned,
-                'created': True,
-            })
-        else:
-            results.append({
-                'subject': subject,
-                'time_slot': None,
-                'created': False,
-            })
+    for slot in candidates:
+        if all(not slots_overlap(slot, taken) for taken in busy):
+            return slot
+    return None
 
-    return results
+
+def schedule_subject(subject, semester='', school_year=''):
+    """
+    Assign one time slot to a subject for every student enrolled in it.
+
+    Any previously assigned rows for this subject and term are replaced, which
+    keeps every student of the subject on the same slot.
+    """
+    students = subject_students(subject)
+    if not students:
+        StudentSchedule.objects.filter(
+            subject=subject, semester=semester, school_year=school_year
+        ).delete()
+        return None
+
+    slot = find_slot_for_subject(subject, semester, school_year)
+    if slot is None:
+        return None
+
+    StudentSchedule.objects.filter(
+        subject=subject, semester=semester, school_year=school_year
+    ).delete()
+    StudentSchedule.objects.bulk_create([
+        StudentSchedule(
+            student=student,
+            subject=subject,
+            time_slot=slot,
+            semester=semester,
+            school_year=school_year,
+        )
+        for student in students
+    ])
+    return slot
 
 
 def regenerate_student_schedule(student, semester='', school_year=''):
     """
-    Regenerate the entire schedule for a student by clearing existing schedules
-    and re-assigning all enrolled subjects.
+    Rebuild a student's schedule for a term from their enrolled subjects.
+
+    Subjects shared with other students keep the time the cohort already has
+    when it is free for this student; otherwise the whole subject is rescheduled
+    so its students stay on the same slot.
+
+    Returns a list of dicts: [{'subject': subject, 'time_slot': slot or None}]
     """
-    enrolled_subjects = list(student.enrolled_subjects.all())
-    # Clear existing schedules
+    subjects = list(student.enrolled_subjects.all())
+
     StudentSchedule.objects.filter(
-        student=student,
-        semester=semester,
-        school_year=school_year,
+        student=student, semester=semester, school_year=school_year
     ).delete()
-    return generate_schedule_for_subjects(
-        student,
-        [s.id for s in enrolled_subjects],
-        semester=semester,
-        school_year=school_year,
+
+    results = []
+    for subject in subjects:
+        # What the rest of the cohort is already in for this subject.
+        cohort_slot = (
+            StudentSchedule.objects.filter(
+                subject=subject,
+                semester=semester,
+                school_year=school_year,
+            )
+            .exclude(student=student)
+            .exclude(time_slot__isnull=True)
+            .select_related('time_slot')
+            .first()
+        )
+
+        if cohort_slot is not None:
+            busy = get_student_busy_slots(student, semester, school_year)
+            if all(not slots_overlap(cohort_slot.time_slot, taken) for taken in busy):
+                StudentSchedule.objects.create(
+                    student=student,
+                    subject=subject,
+                    time_slot=cohort_slot.time_slot,
+                    semester=semester,
+                    school_year=school_year,
+                )
+                results.append({'subject': subject, 'time_slot': cohort_slot.time_slot})
+                continue
+
+        slot = schedule_subject(subject, semester, school_year)
+        results.append({'subject': subject, 'time_slot': slot})
+
+    return results
+
+
+def regenerate_all_schedules(semester='', school_year='', student_ids=None):
+    """
+    Rebuild every subject's schedule for a term.
+
+    Scheduling is subject-centric, so this assigns one time per subject across
+    all of its students at once. `student_ids` limits which students'
+    enrollments are considered, but any subject they share is still moved as a
+    whole to keep the cohort on one time.
+    """
+    from students.models import Student
+    from subjects.models import Subject
+
+    students = Student.objects.all()
+    if student_ids:
+        students = students.filter(id__in=student_ids)
+    student_id_list = list(students.values_list('id', flat=True))
+
+    subjects = list(
+        Subject.objects.filter(enrolled_students__id__in=student_id_list)
+        .distinct()
+        .order_by('code')
     )
+
+    StudentSchedule.objects.filter(
+        semester=semester, school_year=school_year
+    ).delete()
+
+    results = []
+    for subject in subjects:
+        slot = schedule_subject(subject, semester, school_year)
+        results.append({
+            'subject': subject,
+            'time_slot': slot,
+            'student_count': len(subject_students(subject)),
+        })
+    return results

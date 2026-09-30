@@ -9,6 +9,7 @@ Django management command to populate the database with seed data:
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from grades.models import Grade
@@ -274,11 +275,11 @@ class Command(BaseCommand):
             h, m = map(int, start_str.split(':'))
             start = time(h, m)
             end_dt = datetime.combine(date.today(), start) + timedelta(hours=duration)
+            # A day may only have one slot per start time, so match on that.
             TimeSlot.objects.update_or_create(
                 day=day,
                 start_time=start,
-                end_time=end_dt.time(),
-                defaults={'slot_type': slot_type},
+                defaults={'end_time': end_dt.time(), 'slot_type': slot_type},
             )
 
         self.stdout.write(self.style.SUCCESS("Created sample time slots."))
@@ -295,15 +296,16 @@ class Command(BaseCommand):
             student.enrolled_subjects.set(subject_list)
         self.stdout.write(self.style.SUCCESS("Enrolled students in subjects."))
 
-        from schedules.scheduler import regenerate_student_schedule
-        scheduled_total = 0
-        for student, subject_list in enrollment_map.items():
-            result = regenerate_student_schedule(
-                student, semester='1st Sem 2026', school_year='2025-2026'
-            )
-            scheduled_total += sum(1 for r in result if r['time_slot'] is not None)
+        from schedules.scheduler import regenerate_all_schedules
+        result = regenerate_all_schedules(
+            semester=settings.CURRENT_SEMESTER, school_year=settings.CURRENT_SCHOOL_YEAR
+        )
+        scheduled_total = sum(r['student_count'] for r in result if r['time_slot'] is not None)
 
         self.stdout.write(
-            self.style.SUCCESS(f"Created {scheduled_total} sample schedule entries for students.")
+            self.style.SUCCESS(
+                f"Created {scheduled_total} sample schedule entries "
+                f"across {len(result)} subject(s)."
+            )
         )
         self.stdout.write(self.style.SUCCESS("Database seeding completed successfully!"))

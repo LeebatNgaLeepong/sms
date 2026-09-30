@@ -83,7 +83,14 @@ class TimeSlot(models.Model):
 
     class Meta:
         ordering = [day_rank(), 'start_time']
-        unique_together = ('day', 'start_time', 'end_time')
+        constraints = [
+            # A timetable cell is keyed by day and start time, so a day cannot
+            # have two slots beginning at the same hour.
+            models.UniqueConstraint(
+                fields=['day', 'start_time'],
+                name='unique_timeslot_day_start',
+            ),
+        ]
 
     def clean(self):
         if self.start_time and self.end_time and self.end_time <= self.start_time:

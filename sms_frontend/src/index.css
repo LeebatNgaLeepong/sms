@@ -1234,6 +1234,73 @@ table {
 }
 
 /* ============================================================
+   SUBJECT ENROLLMENT PICKER
+   ============================================================ */
+.student-picker {
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.student-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-gray-100);
+  cursor: pointer;
+  font-size: var(--font-sm);
+}
+
+.student-picker-row:last-child {
+  border-bottom: none;
+}
+
+.student-picker-row:hover {
+  background: var(--color-gray-50);
+}
+
+.student-picker-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--color-red-500);
+  cursor: pointer;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  font-size: var(--font-xs);
+}
+
+.chip-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-gray-500);
+  font-size: var(--font-sm);
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.chip-remove:hover {
+  color: var(--color-error);
+}
+
+/* ============================================================
    SCHEDULE TIMETABLE
    ============================================================ */
 .timetable-wrap {

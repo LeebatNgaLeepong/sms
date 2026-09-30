@@ -129,6 +129,12 @@ REST_FRAMEWORK = {
     ),
 }
 
+# The term new enrollments and schedule generation default to. Keeping one
+# configured term stops enrollment from silently creating a parallel timetable
+# under a different (or empty) semester.
+CURRENT_SEMESTER = '1st Sem 2026'
+CURRENT_SCHOOL_YEAR = '2025-2026'
+
 # Simple JWT Configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),

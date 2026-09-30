@@ -12,7 +12,12 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from schedules.models import StudentSchedule, TimeSlot
-from schedules.scheduler import generate_schedule_for_subjects, regenerate_student_schedule, slots_overlap
+from schedules.scheduler import (
+    regenerate_all_schedules,
+    regenerate_student_schedule,
+    schedule_subject,
+    slots_overlap,
+)
 from students.models import Student
 from subjects.models import Subject
 
@@ -47,11 +52,9 @@ class ScheduleGenerationTests(APITestCase):
 
     def test_generate_schedule_assigns_non_conflicting_slots(self):
         """Verify that auto-generated schedules do not have time conflicts."""
-        results = generate_schedule_for_subjects(
-            self.student,
-            [self.subject1.id, self.subject2.id, self.subject3.id],
-            semester='1st Sem',
-            school_year='2025-2026',
+        self.student.enrolled_subjects.set([self.subject1, self.subject2, self.subject3])
+        results = regenerate_student_schedule(
+            self.student, semester='1st Sem', school_year='2025-2026'
         )
 
         # All subjects should be scheduled
@@ -68,6 +71,58 @@ class ScheduleGenerationTests(APITestCase):
                     f"Conflict between {s1.subject.code} and {s2.subject.code}"
                 )
 
+    def test_shared_subject_meets_at_one_time_for_all_students(self):
+        """A course must not meet at different times depending on the student."""
+        other = Student.objects.create(
+            user=User.objects.create_user(
+                username="stu_two", email="stu_two@t.com", password="pw", role=User.ROLE_STUDENT
+            ),
+            name="Second Student",
+            email="stu_two@t.com",
+            program="BS CS",
+            year_level="1st Year",
+        )
+        shared = Subject.objects.create(code='SHARED1', name='Shared Subject', units=3)
+        self.student.enrolled_subjects.add(shared)
+        other.enrolled_subjects.add(shared)
+
+        regenerate_all_schedules(semester='1st Sem', school_year='2025-2026')
+
+        rows = list(
+            StudentSchedule.objects.filter(subject=shared).values_list(
+                'time_slot_id', flat=True
+            )
+        )
+        self.assertEqual(len(rows), 2, 'both students should be scheduled')
+        self.assertEqual(len(set(rows)), 1, 'both students must share one time slot')
+
+    def test_regenerating_one_student_keeps_cohort_time(self):
+        """Re-enrolling one student must not move the rest of the class."""
+        other = Student.objects.create(
+            user=User.objects.create_user(
+                username="stu_three", email="stu_three@t.com", password="pw", role=User.ROLE_STUDENT
+            ),
+            name="Third Student",
+            email="stu_three@t.com",
+            program="BS CS",
+            year_level="1st Year",
+        )
+        shared = Subject.objects.create(code='SHARED2', name='Another Shared', units=3)
+        self.student.enrolled_subjects.add(shared)
+        other.enrolled_subjects.add(shared)
+
+        regenerate_all_schedules(semester='1st Sem', school_year='2025-2026')
+        before = StudentSchedule.objects.filter(subject=shared).first().time_slot_id
+
+        # Re-enrol this student alone; the cohort time should survive.
+        self.student.enrolled_subjects.set([shared])
+        regenerate_student_schedule(
+            self.student, semester='1st Sem', school_year='2025-2026'
+        )
+
+        after = StudentSchedule.objects.filter(subject=shared).first().time_slot_id
+        self.assertEqual(before, after)
+
     def test_generated_schedule_spreads_across_days(self):
         """Successive subjects should land on different days, not pile onto one."""
         # Mon/Tue/Wed 07:00 slots already exist from setUp.
@@ -78,12 +133,8 @@ class ScheduleGenerationTests(APITestCase):
             Subject.objects.create(code=f'X{i}', name=f'Course {i}', units=3)
             for i in range(1, 6)
         ]
-        generate_schedule_for_subjects(
-            self.student,
-            [s.id for s in subjects],
-            semester='1st Sem',
-            school_year='2025-2026',
-        )
+        self.student.enrolled_subjects.set(subjects)
+        regenerate_all_schedules(semester='1st Sem', school_year='2025-2026')
 
         used_days = set(
             StudentSchedule.objects.filter(
@@ -96,13 +147,8 @@ class ScheduleGenerationTests(APITestCase):
         # Enroll student in subjects first
         self.student.enrolled_subjects.set([self.subject1, self.subject2, self.subject3])
 
-        # First generation
-        generate_schedule_for_subjects(
-            self.student,
-            [self.subject1.id],
-            semester='1st Sem',
-            school_year='2025-2026',
-        )
+        # First generation, for one subject only
+        schedule_subject(self.subject1, semester='1st Sem', school_year='2025-2026')
         self.assertEqual(StudentSchedule.objects.filter(student=self.student).count(), 1)
 
         # Regenerate with all enrolled subjects
@@ -164,6 +210,132 @@ class ScheduleGenerationTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         results = res.data.get('results', res.data)
         self.assertEqual(len(results), 1)
+
+
+class SubjectEnrollmentTests(APITestCase):
+    """An admin can add or remove many students on a subject at once."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="root_sub", email="root_sub@test.com", password="pw"
+        )
+        self.teacher = User.objects.create_user(
+            username="teach_sub", email="teach_sub@test.com", password="pw",
+            role=User.ROLE_TEACHER,
+        )
+        self.subject = Subject.objects.create(code="BULK1", name="Bulk Subject", units=3)
+        # Each test class gets a fresh database, so slots must be created here.
+        for day in ['Mon', 'Tue', 'Wed']:
+            TimeSlot.objects.create(
+                day=day, start_time=time(7, 0), end_time=time(9, 0), slot_type='lec'
+            )
+        self.students = [
+            Student.objects.create(
+                user=User.objects.create_user(
+                    username=f"bulk{i}", email=f"bulk{i}@t.com", password="pw",
+                    role=User.ROLE_STUDENT,
+                ),
+                name=f"Bulk Student {i}",
+                email=f"bulk{i}@t.com",
+                program="BS CS",
+                year_level="1st Year",
+            )
+            for i in range(1, 4)
+        ]
+        self.client.force_authenticate(user=self.admin)
+
+    def test_add_multiple_students_to_one_subject(self):
+        ids = [s.id for s in self.students]
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': ids},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['enrolled_count'], 3)
+        self.assertEqual(
+            set(self.subject.enrolled_students.values_list('id', flat=True)), set(ids)
+        )
+
+    def test_added_students_share_one_class_time(self):
+        ids = [s.id for s in self.students]
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': ids, 'semester': '1st Sem', 'school_year': '2025-2026'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(res.data['schedule'])
+
+        rows = list(
+            StudentSchedule.objects.filter(subject=self.subject).values_list(
+                'time_slot_id', flat=True
+            )
+        )
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(set(rows)), 1, 'all students must share one slot')
+
+    def test_remove_students_from_subject(self):
+        ids = [s.id for s in self.students]
+        self.subject.enrolled_students.set(self.students)
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [ids[0]], 'remove': True},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['enrolled_count'], 2)
+        self.assertNotIn(ids[0], self.subject.enrolled_students.values_list('id', flat=True))
+
+    def test_enrollment_without_term_uses_configured_term(self):
+        """Omitting a term must not create a second, empty-semester timetable."""
+        from django.conf import settings
+
+        self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [s.id for s in self.students]},
+            format='json',
+        )
+        rows = StudentSchedule.objects.filter(subject=self.subject)
+        self.assertTrue(rows.exists())
+        self.assertEqual(
+            {r.semester for r in rows}, {settings.CURRENT_SEMESTER}
+        )
+        self.assertEqual(
+            {r.school_year for r in rows}, {settings.CURRENT_SCHOOL_YEAR}
+        )
+        self.assertFalse(
+            StudentSchedule.objects.filter(subject=self.subject, semester='').exists()
+        )
+
+    def test_list_enrolled_students(self):
+        self.subject.enrolled_students.set(self.students[:2])
+        res = self.client.get(reverse('subject-students', kwargs={'pk': self.subject.id}))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['count'], 2)
+        self.assertEqual(
+            {s['id'] for s in res.data['students']},
+            {self.students[0].id, self.students[1].id},
+        )
+
+    def test_unknown_student_ids_are_reported(self):
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [self.students[0].id, 'STU-99999']},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['enrolled_count'], 1)
+        self.assertEqual(res.data['not_found'], ['STU-99999'])
+
+    def test_teacher_cannot_modify_enrollment(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('subject-enroll-students', kwargs={'pk': self.subject.id}),
+            {'student_ids': [self.students[0].id]},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ScheduleAdminTests(APITestCase):

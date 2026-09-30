@@ -43,6 +43,24 @@ Use **Schedules → Auto-Generate** to rebuild a student's timetable from their 
 enrollment. Schedules are keyed by semester and school year, so each term is tracked
 separately.
 
+### Enrolling students in a subject
+
+A course meets at **one time per term**, shared by every student enrolled in it.
+Adding a student therefore never moves the rest of the cohort — if the existing
+time clashes for the new student, the whole subject is rescheduled to a time that
+is free for all of them.
+
+- **Subjects page → Students column** — tick students and enrol or remove them in
+  one action, instead of visiting each student separately. The subject is
+  scheduled for the whole cohort automatically.
+- **Student page → Manage Enrollment** — set one student's subjects; shared
+  subjects keep the time the rest of the class is in.
+- **Schedules → Auto-Generate** — rebuild every subject for the term.
+
+New enrollments default to the term configured as `CURRENT_SEMESTER` /
+`CURRENT_SCHOOL_YEAR` in `sms_project/settings.py`, so schedules do not end up
+split across several terms. Pass `semester` and `school_year` to override.
+
 ### Editing times in the Django admin
 
 Superusers can also manage times and schedule entries at

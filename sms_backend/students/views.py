@@ -5,6 +5,7 @@ ViewSets for students app.
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import StudentPermission
@@ -134,8 +135,8 @@ class StudentViewSet(viewsets.ModelViewSet):
             subject_ids = request.data.get('subject_ids', [])
         if not isinstance(subject_ids, (list, tuple)):
             subject_ids = [subject_ids]
-        semester = request.data.get('semester', '')
-        school_year = request.data.get('school_year', '')
+        semester = request.data.get('semester') or settings.CURRENT_SEMESTER
+        school_year = request.data.get('school_year') or settings.CURRENT_SCHOOL_YEAR
 
         try:
             subjects = Subject.objects.filter(id__in=subject_ids)

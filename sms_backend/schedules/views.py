@@ -2,6 +2,7 @@
 ViewSets for schedules app.
 """
 
+from django.conf import settings
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -9,7 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import IsAdmin
 from .models import StudentSchedule, TimeSlot
-from .scheduler import regenerate_student_schedule
+from .scheduler import regenerate_all_schedules
 from .serializers import StudentScheduleSerializer, TimeSlotSerializer
 
 
@@ -85,31 +86,37 @@ class StudentScheduleViewSet(viewsets.ModelViewSet):
     def generate_all(self, request):
         """
         POST /api/schedules/generate/
-        Body: {"student_ids": [1, 2, 3], "semester": "...", "school_year": "..."}
-        Regenerate schedules for the given students.
+        Body: {"student_ids": ["STU-10001"], "semester": "...", "school_year": "..."}
+        Regenerate schedules. Omit student_ids to rebuild every subject for the term.
         """
-        from students.models import Student
-
         student_ids = request.data.get('student_ids', [])
-        semester = request.data.get('semester', '')
-        school_year = request.data.get('school_year', '')
+        semester = request.data.get('semester') or settings.CURRENT_SEMESTER
+        school_year = request.data.get('school_year') or settings.CURRENT_SCHOOL_YEAR
 
-        students = Student.objects.filter(id__in=student_ids)
-        results = []
-        for student in students:
-            result = regenerate_student_schedule(
-                student, semester=semester, school_year=school_year
-            )
-            results.append({
-                'student_id': student.id,
-                'student_name': student.name,
-                'schedules': [
-                    {
-                        'subject': r['subject'].code,
-                        'time_slot': str(r['time_slot']) if r['time_slot'] else None,
-                        'created': r['created'],
-                    }
-                    for r in result
-                ],
+        results = regenerate_all_schedules(
+            semester=semester,
+            school_year=school_year,
+            student_ids=student_ids or None,
+        )
+
+        scheduled = 0
+        payload = []
+        for r in results:
+            if r['time_slot'] is not None:
+                scheduled += r['student_count']
+            payload.append({
+                'subject': r['subject'].code,
+                'subject_name': r['subject'].name,
+                'day': r['time_slot'].day if r['time_slot'] else None,
+                'start_time': str(r['time_slot'].start_time) if r['time_slot'] else None,
+                'end_time': str(r['time_slot'].end_time) if r['time_slot'] else None,
+                'student_count': r['student_count'],
+                'scheduled': r['time_slot'] is not None,
             })
-        return Response({'detail': 'Schedules generated.', 'results': results})
+
+        return Response({
+            'detail': 'Schedules generated.',
+            'subjects_scheduled': sum(1 for r in results if r['time_slot'] is not None),
+            'classes_scheduled': scheduled,
+            'results': payload,
+        })
