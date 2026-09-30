@@ -24,7 +24,7 @@ const DAYS = [
 
 const SLOT_TYPE_LABELS = { lec: 'Lecture', lab: 'Laboratory' }
 
-const emptySlotForm = { day: 'Mon', start_time: '07:00', duration_hours: 2, slot_type: 'lec', label: '' }
+const emptySlotForm = { day: 'Mon', start_time: '07:00', end_time: '09:00', slot_type: 'lec', label: '' }
 const emptyScheduleForm = { student: '', subject: '', time_slot: '', semester: '', school_year: '' }
 
 const formatTime = (value) => {
@@ -35,6 +35,25 @@ const formatTime = (value) => {
   const suffix = hour >= 12 ? 'PM' : 'AM'
   const display = hour % 12 === 0 ? 12 : hour % 12
   return `${display}:${m} ${suffix}`
+}
+
+/** Compare "HH:MM" strings; returns true when end is not after start. */
+const isEndBeforeStart = (start, end) => {
+  if (!start || !end) return false
+  return end <= start
+}
+
+/** Human-readable length between two "HH:MM" strings, e.g. "2h" or "1h 30m". */
+const formatDuration = (start, end) => {
+  if (isEndBeforeStart(start, end)) return '—'
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  const minutes = eh * 60 + em - (sh * 60 + sm)
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours && rest) return `${hours}h ${rest}m`
+  if (hours) return `${hours}h`
+  return `${rest}m`
 }
 
 const errorText = (err, fallback) => {
@@ -148,7 +167,7 @@ export default function SchedulesPage() {
     setSlotForm({
       day: slot.day,
       start_time: String(slot.start_time).slice(0, 5),
-      duration_hours: slot.duration_hours,
+      end_time: String(slot.end_time).slice(0, 5),
       slot_type: slot.slot_type,
       label: slot.label || '',
     })
@@ -161,7 +180,7 @@ export default function SchedulesPage() {
     const payload = {
       day: slotForm.day,
       start_time: slotForm.start_time,
-      duration_hours: parseInt(slotForm.duration_hours, 10) || 1,
+      end_time: slotForm.end_time,
       slot_type: slotForm.slot_type,
       label: slotForm.label,
     }
@@ -277,6 +296,8 @@ export default function SchedulesPage() {
   const currentDayIndex = new Date().getDay()
   const todayKey = currentDayIndex === 0 ? 'Sun' : DAYS[currentDayIndex - 1].value
 
+  const endTimeInvalid = isEndBeforeStart(slotForm.start_time, slotForm.end_time)
+
   return (
     <div>
       <div className="page-header">
@@ -373,7 +394,10 @@ export default function SchedulesPage() {
                       <td className="timetable-time-col">
                         {formatTime(row.startTime)}
                         <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>
-                          {row.slots.map((s) => `${s.duration_hours}h`).filter((v, i, a) => a.indexOf(v) === i).join(' / ')}
+                          {row.slots
+                            .map((s) => formatDuration(String(s.start_time).slice(0, 5), String(s.end_time).slice(0, 5)))
+                            .filter((v, i, a) => a.indexOf(v) === i)
+                            .join(' / ')}
                         </div>
                       </td>
                       {DAYS.map((day) => {
@@ -393,7 +417,7 @@ export default function SchedulesPage() {
                                   <div className="timetable-card-code">{item.subject_code}</div>
                                   <div className="timetable-card-name">{item.subject_name}</div>
                                   <div className="timetable-card-meta">
-                                    {formatTime(item.start_time)} &middot; {item.duration_hours}h
+                                    {formatTime(item.start_time)} &ndash; {formatTime(item.end_time)}
                                     {item.slot_type === 'lab' ? ' Lab' : ''}
                                   </div>
                                   {!isStudent && (
@@ -579,17 +603,18 @@ export default function SchedulesPage() {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label" htmlFor="slot-duration">Duration (hours)</label>
+                <label className="form-label" htmlFor="slot-end">End Time</label>
                 <input
-                  id="slot-duration"
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  max="8"
-                  value={slotForm.duration_hours}
-                  onChange={(e) => setSlotForm({ ...slotForm, duration_hours: e.target.value })}
+                  id="slot-end"
+                  className={`form-input${endTimeInvalid ? ' error' : ''}`}
+                  type="time"
+                  value={slotForm.end_time}
+                  onChange={(e) => setSlotForm({ ...slotForm, end_time: e.target.value })}
                   required
                 />
+                {endTimeInvalid && (
+                  <div className="form-error">End time must be after the start time.</div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="slot-type">Type</label>
@@ -686,8 +711,9 @@ export default function SchedulesPage() {
                 <option value="">Select time slot</option>
                 {timeSlots.map((slot) => (
                   <option key={slot.id} value={slot.id}>
-                    {DAYS.find((d) => d.value === slot.day)?.full} {formatTime(slot.start_time)} &middot;{' '}
-                    {slot.duration_hours}h {SLOT_TYPE_LABELS[slot.slot_type]}
+                    {DAYS.find((d) => d.value === slot.day)?.full} {formatTime(slot.start_time)}
+                    {' – '}
+                    {formatTime(slot.end_time)} &middot; {SLOT_TYPE_LABELS[slot.slot_type]}
                   </option>
                 ))}
               </select>

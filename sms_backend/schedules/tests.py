@@ -6,6 +6,7 @@ Validates automatic conflict-free schedule generation and admin time editing.
 from datetime import time
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -38,11 +39,11 @@ class ScheduleGenerationTests(APITestCase):
         self.subject3 = Subject.objects.create(code="MATH101", name="Calculus", units=4)
 
         # Create time slots
-        TimeSlot.objects.create(day='Mon', start_time=time(7, 0), duration_hours=2, slot_type='lec')
-        TimeSlot.objects.create(day='Mon', start_time=time(9, 0), duration_hours=2, slot_type='lec')
-        TimeSlot.objects.create(day='Tue', start_time=time(7, 0), duration_hours=2, slot_type='lec')
-        TimeSlot.objects.create(day='Tue', start_time=time(9, 0), duration_hours=2, slot_type='lec')
-        TimeSlot.objects.create(day='Wed', start_time=time(7, 0), duration_hours=2, slot_type='lec')
+        TimeSlot.objects.create(day='Mon', start_time=time(7, 0), end_time=time(9, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Mon', start_time=time(9, 0), end_time=time(11, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Tue', start_time=time(7, 0), end_time=time(9, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Tue', start_time=time(9, 0), end_time=time(11, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Wed', start_time=time(7, 0), end_time=time(9, 0), slot_type='lec')
 
     def test_generate_schedule_assigns_non_conflicting_slots(self):
         """Verify that auto-generated schedules do not have time conflicts."""
@@ -71,7 +72,7 @@ class ScheduleGenerationTests(APITestCase):
         """Successive subjects should land on different days, not pile onto one."""
         # Mon/Tue/Wed 07:00 slots already exist from setUp.
         for day in ['Thu', 'Fri']:
-            TimeSlot.objects.create(day=day, start_time=time(7, 0), duration_hours=2, slot_type='lec')
+            TimeSlot.objects.create(day=day, start_time=time(7, 0), end_time=time(9, 0), slot_type='lec')
 
         subjects = [
             Subject.objects.create(code=f'X{i}', name=f'Course {i}', units=3)
@@ -131,7 +132,7 @@ class ScheduleGenerationTests(APITestCase):
     def test_schedule_list_is_ordered_chronologically(self):
         """Days must come back Mon..Sun, not alphabetically."""
         for day in ['Fri', 'Mon', 'Wed']:
-            TimeSlot.objects.create(day=day, start_time=time(13, 0), duration_hours=2, slot_type='lec')
+            TimeSlot.objects.create(day=day, start_time=time(13, 0), end_time=time(15, 0), slot_type='lec')
         for index, day in enumerate(['Fri', 'Mon', 'Wed']):
             StudentSchedule.objects.create(
                 student=self.student,
@@ -184,7 +185,7 @@ class ScheduleAdminTests(APITestCase):
         )
         self.subject = Subject.objects.create(code="CS301", name="Databases", units=3)
         self.slot = TimeSlot.objects.create(
-            day='Mon', start_time=time(7, 0), duration_hours=2, slot_type='lec', label='Period 1'
+            day='Mon', start_time=time(7, 0), end_time=time(9, 0), slot_type='lec', label='Period 1'
         )
         self.schedule = StudentSchedule.objects.create(
             student=self.student,
@@ -216,7 +217,7 @@ class ScheduleAdminTests(APITestCase):
             {
                 'day': 'Mon',
                 'start_time': '09:30',
-                'duration_hours': 3,
+                'end_time': '12:30',
                 'slot_type': 'lab',
                 'label': 'Morning Lab',
             },
@@ -236,7 +237,7 @@ class ScheduleAdminTests(APITestCase):
             {
                 'day': 'Tue',
                 'start_time': '13:00',
-                'duration_hours': 2,
+                'end_time': '15:00',
                 'slot_type': 'lec',
                 'label': 'Period 1',
             },
@@ -244,11 +245,79 @@ class ScheduleAdminTests(APITestCase):
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.time_slot.day, 'Tue')
         self.assertEqual(self.schedule.time_slot.start_time, time(13, 0))
+        self.assertEqual(self.schedule.time_slot.end_time, time(15, 0))
         self.assertEqual(StudentSchedule.objects.count(), 1)
 
+    def test_end_time_must_be_after_start_time(self):
+        with self.assertRaises(ValidationError):
+            TimeSlot.objects.create(
+                day='Sun', start_time=time(9, 0), end_time=time(8, 0), slot_type='lec'
+            )
+
+    def test_duration_is_derived_from_times(self):
+        slot = TimeSlot.objects.create(
+            day='Sun', start_time=time(8, 0), end_time=time(11, 30), slot_type='lec'
+        )
+        self.assertEqual(slot.duration_hours, 4)  # 3.5h rounds half up
+
+    def test_editing_end_time_changes_assigned_classes(self):
+        """The class finishes at the time set on the slot, not start + duration."""
+        slot = TimeSlot.objects.create(
+            day='Sat', start_time=time(9, 0), end_time=time(10, 0), slot_type='lec'
+        )
+        subject = Subject.objects.create(code='SA101', name='Saturday Subject', units=3)
+        schedule = StudentSchedule.objects.create(
+            student=self.student,
+            subject=subject,
+            time_slot=slot,
+            semester='1st Sem',
+            school_year='2025-2026',
+        )
+
+        slot.end_time = time(12, 0)
+        slot.save()
+        slot.refresh_from_db()
+        schedule.refresh_from_db()
+
+        self.assertEqual(schedule.time_slot.end_time, time(12, 0))
+        self.assertEqual(slot.duration_hours, 3)
+
+    def test_api_rejects_end_before_start(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('timeslot-list'),
+            {
+                'day': 'Sun',
+                'start_time': '10:00',
+                'end_time': '08:00',
+                'slot_type': 'lec',
+                'label': 'Bad',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('end_time', res.data)
+
+    def test_api_accepts_custom_end_time(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('timeslot-list'),
+            {
+                'day': 'Sun',
+                'start_time': '10:00',
+                'end_time': '11:30',
+                'slot_type': 'lab',
+                'label': 'Short Lab',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['end_time'], '11:30:00')
+        self.assertEqual(res.data['duration_hours'], 2)  # derived, read-only
+
     def test_admin_timeslot_list_is_chronological(self):
-        TimeSlot.objects.create(day='Fri', start_time=time(8, 0), duration_hours=1, slot_type='lec')
-        TimeSlot.objects.create(day='Tue', start_time=time(8, 0), duration_hours=1, slot_type='lec')
+        TimeSlot.objects.create(day='Fri', start_time=time(8, 0), end_time=time(9, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Tue', start_time=time(8, 0), end_time=time(9, 0), slot_type='lec')
         res = self.client.get(reverse('admin:schedules_timeslot_changelist'))
         days = [obj.day for obj in res.context['cl'].queryset]
         self.assertEqual(days, ['Mon', 'Tue', 'Fri'])

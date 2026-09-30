@@ -7,6 +7,7 @@ Django management command to populate the database with seed data:
 - Grades covering full spectrum (A, B, C, D, F) with computed grade points
 """
 
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -271,11 +272,13 @@ class Command(BaseCommand):
         from datetime import time
         for day, start_str, duration, slot_type in time_slots_data:
             h, m = map(int, start_str.split(':'))
-            TimeSlot.objects.get_or_create(
+            start = time(h, m)
+            end_dt = datetime.combine(date.today(), start) + timedelta(hours=duration)
+            TimeSlot.objects.update_or_create(
                 day=day,
-                start_time=time(h, m),
-                duration_hours=duration,
-                slot_type=slot_type,
+                start_time=start,
+                end_time=end_dt.time(),
+                defaults={'slot_type': slot_type},
             )
 
         self.stdout.write(self.style.SUCCESS("Created sample time slots."))

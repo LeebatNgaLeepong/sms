@@ -14,14 +14,17 @@ class TimeSlotAdmin(admin.ModelAdmin):
     """
     Admin configuration for TimeSlot.
 
-    Editing a slot's start time or duration moves every class already assigned to
-    it, so changing a time here reshuffles all students using that slot. Deleting
-    a slot instead removes the schedule entries that referenced it.
+    Set the start and end times directly; duration is derived from them. Editing a
+    slot's times moves every class already assigned to it, so changing a time here
+    reshuffles all students using that slot. Deleting a slot instead removes the
+    schedule entries that referenced it.
     """
 
     list_display = ('day', 'start_time', 'end_time', 'duration_hours', 'slot_type', 'label', 'class_count')
     list_filter = ('day', 'slot_type', 'duration_hours')
     search_fields = ('label',)
+    readonly_fields = ('duration_hours',)
+    fields = ('day', 'start_time', 'end_time', 'duration_hours', 'slot_type', 'label')
 
     @admin.display(description='Scheduled classes')
     def class_count(self, obj):

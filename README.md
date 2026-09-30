@@ -34,9 +34,10 @@ A student with no recorded grades has a GPA of 5.00.
 
 ## Schedules
 
-Time slots (day, start time, duration, lecture/lab) are defined once and shared by
-every student. Enrolling a student in subjects automatically assigns each subject a
-slot with no time conflicts, rotating across days so the whole week is used.
+Time slots (day, start time, end time, lecture/lab) are defined once and shared by
+every student. Set the start and end times directly; the duration shown in the UI is
+derived from them. Enrolling a student in subjects automatically assigns each subject
+a slot with no time conflicts, rotating across days so the whole week is used.
 
 Use **Schedules → Auto-Generate** to rebuild a student's timetable from their current
 enrollment. Schedules are keyed by semester and school year, so each term is tracked
@@ -48,10 +49,11 @@ Superusers can also manage times and schedule entries at
 http://localhost:8000/admin/schedules/. Use `python manage.py createsuperuser` if you
 do not have one yet.
 
-- **Time slots** — day, start time, duration, lecture/lab, and label are all editable.
-  Changing a slot's time or duration moves every class already assigned to that slot,
-  so all students using it are rescheduled together. Deleting a slot instead removes
-  the schedule entries that referenced it.
+- **Time slots** — day, start time, end time, lecture/lab, and label are all editable.
+  Changing a slot's times moves every class already assigned to that slot, so all
+  students using it are rescheduled together. Deleting a slot instead removes the
+  schedule entries that referenced it. The end time must be after the start time;
+  duration is derived and not edited directly.
 - **Schedule entries** — assign or reassign a student, subject, slot, and term.
   Both lists are ordered chronologically (Monday to Sunday) and filterable by day and
   term.

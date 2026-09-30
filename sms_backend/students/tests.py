@@ -143,8 +143,8 @@ class EnrollmentScheduleTests(APITestCase):
         self.subject_b = Subject.objects.create(code="MATH201", name="Calculus", units=4)
 
         # Two non-overlapping slots are enough to schedule both subjects.
-        TimeSlot.objects.create(day='Mon', start_time=time(7, 0), duration_hours=2, slot_type='lec')
-        TimeSlot.objects.create(day='Mon', start_time=time(9, 0), duration_hours=2, slot_type='lec')
+        TimeSlot.objects.create(day='Mon', start_time=time(7, 0), end_time=time(9, 0), slot_type='lec')
+        TimeSlot.objects.create(day='Mon', start_time=time(9, 0), end_time=time(11, 0), slot_type='lec')
 
     def test_enroll_auto_generates_schedules(self):
         self.client.force_authenticate(user=self.admin)

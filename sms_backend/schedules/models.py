@@ -4,11 +4,15 @@ Handles class schedules for students with automatic conflict-free generation.
 
 Features:
 - Time slots from 7:00 AM to 8:00 PM, Monday through Sunday
-- Adjustable duration per subject session
+- Adjustable start and end times per subject session
 - Lab or Lecture type designation
 - Automatic conflict-free schedule generation
 """
 
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
+
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Case, IntegerField, Value, When
 
@@ -30,7 +34,8 @@ def day_rank(day_field='day'):
 class TimeSlot(models.Model):
     """
     Represents a reusable time slot in the weekly schedule.
-    Each time slot has a start time, duration, and type (Lab or Lecture).
+    Each time slot has a start time, an end time, and a type (Lab or Lecture).
+    The end time is set directly; duration_hours is derived from the two times.
     """
 
     DAY_CHOICES = tuple((code, full) for code, full in [
@@ -56,9 +61,13 @@ class TimeSlot(models.Model):
     start_time = models.TimeField(
         help_text="Start time of the slot (e.g., 07:00).",
     )
+    end_time = models.TimeField(
+        help_text="End time of the slot (e.g., 09:00). Must be after the start time.",
+    )
     duration_hours = models.PositiveSmallIntegerField(
         default=2,
-        help_text="Duration of the slot in hours (e.g., 2 for 2 hours).",
+        editable=False,
+        help_text="Derived from start_time and end_time.",
     )
     slot_type = models.CharField(
         max_length=3,
@@ -74,15 +83,28 @@ class TimeSlot(models.Model):
 
     class Meta:
         ordering = [day_rank(), 'start_time']
-        unique_together = ('day', 'start_time', 'duration_hours')
+        unique_together = ('day', 'start_time', 'end_time')
 
-    @property
-    def end_time(self):
-        """Compute end time from start_time and duration_hours."""
-        from datetime import datetime, timedelta
-        start_dt = datetime.combine(datetime.today(), self.start_time)
-        end_dt = start_dt + timedelta(hours=self.duration_hours)
-        return end_dt.time()
+    def clean(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError({
+                'end_time': 'End time must be after the start time.',
+            })
+
+    def save(self, *args, **kwargs):
+        # duration_hours is display-only and always recomputed from the two times.
+        if self.start_time and self.end_time:
+            self.clean()
+            self.duration_hours = self.compute_duration_hours(self.start_time, self.end_time)
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def compute_duration_hours(start_time, end_time):
+        """Whole hours between two times, rounded half up, never below 1."""
+        start_dt = datetime.combine(date.today(), start_time)
+        end_dt = datetime.combine(date.today(), end_time)
+        hours = Decimal(str((end_dt - start_dt).total_seconds() / 3600))
+        return max(1, int(hours.quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
 
     def __str__(self) -> str:
         label = f" - {self.label}" if self.label else ""

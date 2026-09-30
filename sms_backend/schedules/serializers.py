@@ -12,7 +12,7 @@ class TimeSlotSerializer(serializers.ModelSerializer):
     Serializer for TimeSlot model.
     """
 
-    end_time = serializers.SerializerMethodField(read_only=True)
+    duration_hours = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = TimeSlot
@@ -20,16 +20,21 @@ class TimeSlotSerializer(serializers.ModelSerializer):
             'id',
             'day',
             'start_time',
+            'end_time',
             'duration_hours',
             'slot_type',
-            'end_time',
             'label',
         ]
-        read_only_fields = ['id', 'end_time']
+        read_only_fields = ['id', 'duration_hours']
 
-    def get_end_time(self, obj):
-        """Return computed end time."""
-        return obj.end_time.isoformat() if obj.end_time else None
+    def validate(self, attrs):
+        start = attrs.get('start_time') or getattr(self.instance, 'start_time', None)
+        end = attrs.get('end_time') or getattr(self.instance, 'end_time', None)
+        if start and end and end <= start:
+            raise serializers.ValidationError({
+                'end_time': 'End time must be after the start time.',
+            })
+        return attrs
 
 
 class StudentScheduleSerializer(serializers.ModelSerializer):
@@ -73,6 +78,6 @@ class StudentScheduleSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_end_time(self, obj):
-        """Return computed end time for the time slot."""
+        """Return the time slot's end time."""
         end = obj.time_slot.end_time
         return end.isoformat() if end else None
