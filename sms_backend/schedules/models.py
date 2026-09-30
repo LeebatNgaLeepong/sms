@@ -10,6 +10,21 @@ Features:
 """
 
 from django.db import models
+from django.db.models import Case, IntegerField, Value, When
+
+# Chronological weekday order. Ordering by the stored day code directly would
+# sort alphabetically (Fri, Mon, Sat, Sun, Thu, Tue, Wed), so the rank is
+# applied as a database expression in Meta.ordering.
+DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+
+def day_rank(day_field='day'):
+    """Return a Case expression ranking a day code chronologically (Mon=0..Sun=6)."""
+    return Case(
+        *[When(**{day_field: day}, then=Value(index)) for index, day in enumerate(DAY_ORDER)],
+        default=Value(len(DAY_ORDER)),
+        output_field=IntegerField(),
+    )
 
 
 class TimeSlot(models.Model):
@@ -18,7 +33,7 @@ class TimeSlot(models.Model):
     Each time slot has a start time, duration, and type (Lab or Lecture).
     """
 
-    DAY_CHOICES = (
+    DAY_CHOICES = tuple((code, full) for code, full in [
         ('Mon', 'Monday'),
         ('Tue', 'Tuesday'),
         ('Wed', 'Wednesday'),
@@ -26,7 +41,7 @@ class TimeSlot(models.Model):
         ('Fri', 'Friday'),
         ('Sat', 'Saturday'),
         ('Sun', 'Sunday'),
-    )
+    ])
 
     SLOT_TYPE_CHOICES = (
         ('lec', 'Lecture'),
@@ -58,7 +73,7 @@ class TimeSlot(models.Model):
     )
 
     class Meta:
-        ordering = ['day', 'start_time']
+        ordering = [day_rank(), 'start_time']
         unique_together = ('day', 'start_time', 'duration_hours')
 
     @property
@@ -113,7 +128,7 @@ class StudentSchedule(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['student__id', 'time_slot__day', 'time_slot__start_time']
+        ordering = ['student__id', day_rank('time_slot__day'), 'time_slot__start_time']
         unique_together = ('student', 'subject', 'semester', 'school_year')
 
     def __str__(self) -> str:

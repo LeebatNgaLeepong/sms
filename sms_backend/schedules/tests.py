@@ -1,7 +1,9 @@
 """
 Tests for schedules app.
-Validates automatic conflict-free schedule generation.
+Validates automatic conflict-free schedule generation and admin time editing.
 """
+
+from datetime import time
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -36,7 +38,6 @@ class ScheduleGenerationTests(APITestCase):
         self.subject3 = Subject.objects.create(code="MATH101", name="Calculus", units=4)
 
         # Create time slots
-        from datetime import time
         TimeSlot.objects.create(day='Mon', start_time=time(7, 0), duration_hours=2, slot_type='lec')
         TimeSlot.objects.create(day='Mon', start_time=time(9, 0), duration_hours=2, slot_type='lec')
         TimeSlot.objects.create(day='Tue', start_time=time(7, 0), duration_hours=2, slot_type='lec')
@@ -68,8 +69,6 @@ class ScheduleGenerationTests(APITestCase):
 
     def test_generated_schedule_spreads_across_days(self):
         """Successive subjects should land on different days, not pile onto one."""
-        from datetime import time
-
         # Mon/Tue/Wed 07:00 slots already exist from setUp.
         for day in ['Thu', 'Fri']:
             TimeSlot.objects.create(day=day, start_time=time(7, 0), duration_hours=2, slot_type='lec')
@@ -131,8 +130,6 @@ class ScheduleGenerationTests(APITestCase):
 
     def test_schedule_list_is_ordered_chronologically(self):
         """Days must come back Mon..Sun, not alphabetically."""
-        from datetime import time
-
         for day in ['Fri', 'Mon', 'Wed']:
             TimeSlot.objects.create(day=day, start_time=time(13, 0), duration_hours=2, slot_type='lec')
         for index, day in enumerate(['Fri', 'Mon', 'Wed']):
@@ -166,3 +163,97 @@ class ScheduleGenerationTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         results = res.data.get('results', res.data)
         self.assertEqual(len(results), 1)
+
+
+class ScheduleAdminTests(APITestCase):
+    """Staff can view and change class times through the Django admin."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="root_s", email="root_s@test.com", password="pw"
+        )
+        self.student_user = User.objects.create_user(
+            username="stu_adm", email="stu_adm@test.com", password="pw", role=User.ROLE_STUDENT
+        )
+        self.student = Student.objects.create(
+            user=self.student_user,
+            name="Admin Schedule Student",
+            email="stu_adm@test.com",
+            program="BS CS",
+            year_level="1st Year",
+        )
+        self.subject = Subject.objects.create(code="CS301", name="Databases", units=3)
+        self.slot = TimeSlot.objects.create(
+            day='Mon', start_time=time(7, 0), duration_hours=2, slot_type='lec', label='Period 1'
+        )
+        self.schedule = StudentSchedule.objects.create(
+            student=self.student,
+            subject=self.subject,
+            time_slot=self.slot,
+            semester='1st Sem',
+            school_year='2025-2026',
+        )
+        self.client.force_login(self.admin)
+
+    def test_admin_pages_render(self):
+        for name in (
+            'admin:schedules_timeslot_changelist',
+            'admin:schedules_timeslot_add',
+            'admin:schedules_studentschedule_changelist',
+            'admin:schedules_studentschedule_add',
+        ):
+            with self.subTest(view=name):
+                res = self.client.get(reverse(name))
+                self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_admin_change_form_renders(self):
+        res = self.client.get(reverse('admin:schedules_timeslot_change', args=[self.slot.id]))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_admin_can_change_slot_time(self):
+        res = self.client.post(
+            reverse('admin:schedules_timeslot_change', args=[self.slot.id]),
+            {
+                'day': 'Mon',
+                'start_time': '09:30',
+                'duration_hours': 3,
+                'slot_type': 'lab',
+                'label': 'Morning Lab',
+            },
+        )
+        self.assertEqual(res.status_code, 302)  # redirect after save
+
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.start_time, time(9, 30))
+        self.assertEqual(self.slot.end_time, time(12, 30))
+        self.assertEqual(self.slot.duration_hours, 3)
+        self.assertEqual(self.slot.slot_type, 'lab')
+
+    def test_editing_slot_time_moves_assigned_classes(self):
+        """Existing schedules point at the slot, so they follow the new time."""
+        self.client.post(
+            reverse('admin:schedules_timeslot_change', args=[self.slot.id]),
+            {
+                'day': 'Tue',
+                'start_time': '13:00',
+                'duration_hours': 2,
+                'slot_type': 'lec',
+                'label': 'Period 1',
+            },
+        )
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.time_slot.day, 'Tue')
+        self.assertEqual(self.schedule.time_slot.start_time, time(13, 0))
+        self.assertEqual(StudentSchedule.objects.count(), 1)
+
+    def test_admin_timeslot_list_is_chronological(self):
+        TimeSlot.objects.create(day='Fri', start_time=time(8, 0), duration_hours=1, slot_type='lec')
+        TimeSlot.objects.create(day='Tue', start_time=time(8, 0), duration_hours=1, slot_type='lec')
+        res = self.client.get(reverse('admin:schedules_timeslot_changelist'))
+        days = [obj.day for obj in res.context['cl'].queryset]
+        self.assertEqual(days, ['Mon', 'Tue', 'Fri'])
+
+    def test_non_staff_cannot_enter_admin(self):
+        self.client.force_login(self.student_user)
+        res = self.client.get(reverse('admin:schedules_timeslot_changelist'))
+        self.assertEqual(res.status_code, 302)  # redirected away from admin

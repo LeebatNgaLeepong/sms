@@ -42,6 +42,20 @@ Use **Schedules → Auto-Generate** to rebuild a student's timetable from their 
 enrollment. Schedules are keyed by semester and school year, so each term is tracked
 separately.
 
+### Editing times in the Django admin
+
+Superusers can also manage times and schedule entries at
+http://localhost:8000/admin/schedules/. Use `python manage.py createsuperuser` if you
+do not have one yet.
+
+- **Time slots** — day, start time, duration, lecture/lab, and label are all editable.
+  Changing a slot's time or duration moves every class already assigned to that slot,
+  so all students using it are rescheduled together. Deleting a slot instead removes
+  the schedule entries that referenced it.
+- **Schedule entries** — assign or reassign a student, subject, slot, and term.
+  Both lists are ordered chronologically (Monday to Sunday) and filterable by day and
+  term.
+
 ## Getting Started
 
 ### 1. Backend Setup (Django)

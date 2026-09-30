@@ -2,7 +2,6 @@
 ViewSets for schedules app.
 """
 
-from django.db.models import Case, IntegerField, Value, When
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,19 +9,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import IsAdmin
 from .models import StudentSchedule, TimeSlot
-from .scheduler import DAY_ORDER, regenerate_student_schedule
+from .scheduler import regenerate_student_schedule
 from .serializers import StudentScheduleSerializer, TimeSlotSerializer
-
-
-def with_day_order(queryset, day_field='time_slot__day'):
-    """Annotate a chronological weekday rank so results order Mon..Sun, not alphabetically."""
-    whens = [
-        When(**{day_field: day}, then=Value(index))
-        for index, day in enumerate(DAY_ORDER)
-    ]
-    return queryset.annotate(
-        day_order=Case(*whens, default=Value(len(DAY_ORDER)), output_field=IntegerField())
-    )
 
 
 class SchedulePagination(pagination.PageNumberPagination):
@@ -41,7 +29,8 @@ class TimeSlotViewSet(viewsets.ModelViewSet):
     serializer_class = TimeSlotSerializer
 
     def get_queryset(self):
-        return with_day_order(TimeSlot.objects.all(), day_field='day').order_by('day_order', 'start_time')
+        # Chronological Mon..Sun ordering comes from the model Meta.ordering.
+        return TimeSlot.objects.all()
 
     def get_permissions(self):
         if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
@@ -67,8 +56,8 @@ class StudentScheduleViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['student', 'subject', 'semester', 'school_year', 'time_slot']
     search_fields = ['student__name', 'subject__code', 'subject__name']
-    ordering_fields = ['created_at', 'updated_at', 'day_order', 'time_slot__start_time']
-    ordering = ['student__id', 'day_order', 'time_slot__start_time']
+    ordering_fields = ['created_at', 'updated_at', 'time_slot__start_time']
+    ordering = None
 
     def get_permissions(self):
         from rest_framework.permissions import IsAuthenticated
@@ -90,7 +79,7 @@ class StudentScheduleViewSet(viewsets.ModelViewSet):
         elif user.role not in ['admin', 'teacher'] and not user.is_superuser:
             return StudentSchedule.objects.none()
 
-        return with_day_order(base).order_by('student__id', 'day_order', 'time_slot__start_time')
+        return base
 
     @action(detail=False, methods=['post'], url_path='generate')
     def generate_all(self, request):

@@ -3,11 +3,7 @@ Schedule generation utilities.
 Provides automatic conflict-free class schedule generation for students.
 """
 
-from .models import StudentSchedule, TimeSlot
-
-# Chronological weekday order. Model-level ordering is alphabetical by day code,
-# so generation must sort explicitly to avoid piling every class onto 'Fri'.
-DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+from .models import DAY_ORDER, StudentSchedule, TimeSlot
 
 
 def slot_sort_key(slot):
