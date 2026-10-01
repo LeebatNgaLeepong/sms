@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import StudentPermission
@@ -46,7 +47,22 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        base_qs = Student.objects.select_related('user').prefetch_related('enrolled_subjects').all()
+        # grades_count is annotated so listing students does not need one query
+        # per student; incomplete_count comes from the same grade rows.
+        base_qs = (
+            Student.objects.select_related('user')
+            .prefetch_related('enrolled_subjects')
+            .annotate(
+                grades_count=Count('grades'),
+                # Named inc_count, not incomplete_count: the model has a read-only
+                # property of that name and an annotation would collide with it.
+                inc_count=Count(
+                    'grades',
+                    filter=Q(grades__is_incomplete=True),
+                ),
+            )
+            .all()
+        )
 
         if not user.is_authenticated:
             return base_qs.none()
@@ -81,9 +97,10 @@ class StudentViewSet(viewsets.ModelViewSet):
                     'name': g.subject.name,
                     'units': g.subject.units,
                 },
-                'score': str(g.score),
+                'score': str(g.score) if g.score is not None else None,
                 'letter': g.letter,
-                'grade_points': str(g.grade_points),
+                'grade_points': str(g.grade_points) if g.grade_points is not None else None,
+                'is_incomplete': g.is_incomplete,
                 'recorded_by': g.recorded_by.username if g.recorded_by else None,
                 'created_at': g.created_at,
                 'updated_at': g.updated_at,
@@ -98,6 +115,7 @@ class StudentViewSet(viewsets.ModelViewSet):
             'gpa': student.gpa,
             'gwa': student.gwa,
             'units_earned': student.units_earned,
+            'incomplete_count': student.incomplete_count,
             'total_grades': len(grades_data),
             'grades': grades_data,
         }

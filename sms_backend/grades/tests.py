@@ -103,6 +103,58 @@ class IncompleteGradeTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('score', res.data)
 
+    def test_api_accepts_explicit_null_score_with_inc(self):
+        """The UI always sends score: null, which must not 500."""
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': None,
+                'is_incomplete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['letter'], 'INC')
+
+    def test_api_accepts_explicit_null_score_on_update(self):
+        Grade.objects.create(
+            student=self.student, subject=self.subject, score=Decimal('88.00'),
+            recorded_by=self.teacher,
+        )
+        existing = Grade.objects.get(student=self.student, subject=self.subject)
+        self.client.force_authenticate(user=self.teacher)
+        # Same payload shape the UI sends when editing a grade.
+        res = self.client.put(
+            reverse('grade-detail', kwargs={'pk': existing.pk}),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': None,
+                'is_incomplete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['letter'], 'INC')
+
+    def test_api_rejects_null_score_without_inc(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': None,
+                'is_incomplete': False,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('score', res.data)
+
     def test_no_4_grade_point_is_ever_produced(self):
         grade = Grade.objects.create(
             student=self.student, subject=self.other, score=Decimal('75.00'),

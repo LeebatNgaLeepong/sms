@@ -664,6 +664,12 @@ table {
   color: var(--color-gray-500);
 }
 
+.stat-hint {
+  font-size: var(--font-xs);
+  color: var(--color-gray-500);
+  margin-top: var(--space-1);
+}
+
 .stat-card-icon {
   width: 36px;
   height: 36px;
@@ -1312,6 +1318,26 @@ table {
   font-size: var(--font-xs);
   color: var(--color-gray-500);
   margin-top: 2px;
+}
+
+.row-clickable {
+  cursor: pointer;
+}
+
+.row-clickable:hover td {
+  background: var(--color-gold-50);
+}
+
+.back-link {
+  margin-bottom: var(--space-3);
+  padding-left: var(--space-1);
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 /* ============================================================

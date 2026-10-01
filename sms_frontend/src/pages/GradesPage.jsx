@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import { IconSearch, IconPlus, IconEdit, IconTrash } from '../components/Icons'
-import { gradeBadgeClass, gradeDescription } from '../utils/grades'
+import StudentGradePanel from '../components/StudentGradePanel'
+import { IconSearch, IconPlus } from '../components/Icons'
+import { gwaColor } from '../utils/grades'
 
 export default function GradesPage() {
-  const [grades, setGrades] = useState([])
+  const [students, setStudents] = useState([])
+  const [studentOptions, setStudentOptions] = useState([])
+  const [studentGrades, setStudentGrades] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadingGrades, setLoadingGrades] = useState(false)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editGrade, setEditGrade] = useState(null)
@@ -17,13 +21,7 @@ export default function GradesPage() {
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
 
-  const [students, setStudents] = useState([])
   const [subjects, setSubjects] = useState([])
-  const [teachers, setTeachers] = useState([])
-
-  const [filterSubject, setFilterSubject] = useState('')
-  const [filterTeacher, setFilterTeacher] = useState('')
-  const [filterYear, setFilterYear] = useState('')
 
   const { isAdmin, isTeacher, isStudent } = useAuth()
   const { addToast } = useToast()
@@ -31,65 +29,82 @@ export default function GradesPage() {
   const canModify = isAdmin || isTeacher
 
   useEffect(() => {
-    fetchGrades()
-  }, [page, filterSubject, filterTeacher, filterYear])
+    fetchStudents()
+  }, [page, search])
 
   useEffect(() => {
-    fetchDropdownData()
+    api
+      .get('/subjects/', { params: { page_size: 200 } })
+      .then((res) => setSubjects(res.data.results || res.data || []))
+      .catch((err) => console.error('Subjects fetch error:', err))
   }, [])
 
-  const fetchGrades = async () => {
+  // The student picker needs the full list, not just the visible page.
+  useEffect(() => {
+    api
+      .get('/students/', { params: { page_size: 500 } })
+      .then((res) => setStudentOptions(res.data.results || res.data || []))
+      .catch((err) => console.error('Student options fetch error:', err))
+  }, [])
+
+  const fetchStudents = async () => {
     setLoading(true)
     try {
-      const params = { page }
-      if (search) params.student = search
-      if (filterSubject) params.subject = filterSubject
-      if (filterTeacher) params.teacher = filterTeacher
-      if (filterYear) params.year_level = filterYear
-      const res = await api.get('/grades/', { params })
-      setGrades(res.data.results || res.data)
+      const params = { page, page_size: 10 }
+      if (search) params.search = search
+      const res = await api.get('/students/', { params })
+      setStudents(res.data.results || res.data || [])
       setTotalCount(res.data.count || 0)
     } catch (err) {
-      console.error('Grades fetch error:', err)
+      console.error('Students fetch error:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchDropdownData = async () => {
+  const openStudent = useCallback(async (student) => {
+    setLoadingGrades(true)
+    setStudentGrades({ ...student, grades: [], total_grades: student.grades_count || 0 })
     try {
-      const [studentsRes, subjectsRes, teachersRes] = await Promise.all([
-        api.get('/students/', { params: { page_size: 100 } }),
-        api.get('/subjects/', { params: { page_size: 100 } }),
-        api.get('/teachers/'),
-      ])
-      setStudents(studentsRes.data.results || studentsRes.data)
-      setSubjects(subjectsRes.data.results || subjectsRes.data)
-      setTeachers(teachersRes.data)
+      const res = await api.get(`/students/${student.id}/grades/`)
+      setStudentGrades(res.data)
     } catch (err) {
-      console.error('Dropdown data fetch error:', err)
+      console.error('Student grades fetch error:', err)
+      addToast('Failed to load this student\'s grades', 'error')
+      setStudentGrades(null)
+    } finally {
+      setLoadingGrades(false)
     }
+  }, [addToast])
+
+  const closeStudent = () => {
+    setStudentGrades(null)
+    fetchStudents()
   }
 
-  const clearFilters = () => {
-    setSearch('')
-    setFilterSubject('')
-    setFilterTeacher('')
-    setFilterYear('')
-    setPage(1)
+  const refreshStudentGrades = async () => {
+    if (!studentGrades) return
+    const res = await api.get(`/students/${studentGrades.student_id}/grades/`)
+    setStudentGrades(res.data)
+    fetchStudents()
   }
 
-  const openCreate = () => {
+  const openCreate = (studentId = '') => {
     setEditGrade(null)
-    setForm({ student: '', subject: '', score: '', is_incomplete: false })
+    setForm({
+      student: studentId,
+      subject: '',
+      score: '',
+      is_incomplete: false,
+    })
     setShowModal(true)
   }
 
   const openEdit = (grade) => {
     setEditGrade(grade)
     setForm({
-      student: grade.student,
-      subject: grade.subject,
+      student: grade.student_id || studentGrades?.student_id || '',
+      subject: grade.subject?.id ?? '',
       score: grade.score ?? '',
       is_incomplete: Boolean(grade.is_incomplete),
     })
@@ -108,13 +123,23 @@ export default function GradesPage() {
       }
       if (editGrade) {
         await api.put(`/grades/${editGrade.id}/`, payload)
-        addToast('Grade updated successfully', 'success')
+        addToast(
+          form.is_incomplete ? 'Marked as INC' : 'Grade updated successfully',
+          'success'
+        )
       } else {
         await api.post('/grades/', payload)
-        addToast('Grade recorded successfully', 'success')
+        addToast(
+          form.is_incomplete ? 'Recorded as INC' : 'Grade recorded successfully',
+          'success'
+        )
       }
       setShowModal(false)
-      fetchGrades()
+      if (studentGrades) {
+        await refreshStudentGrades()
+      } else {
+        fetchStudents()
+      }
     } catch (err) {
       const msg = err.response?.data
       let errorText = 'An error occurred'
@@ -134,7 +159,11 @@ export default function GradesPage() {
     try {
       await api.delete(`/grades/${grade.id}/`)
       addToast('Grade deleted', 'success')
-      fetchGrades()
+      if (studentGrades) {
+        await refreshStudentGrades()
+      } else {
+        fetchStudents()
+      }
     } catch {
       addToast('Failed to delete grade', 'error')
     }
@@ -142,166 +171,132 @@ export default function GradesPage() {
 
   const handleSearch = () => {
     setPage(1)
-    fetchGrades()
+    fetchStudents()
   }
 
   const totalPages = Math.ceil(totalCount / 10)
 
-  return (
+return (
     <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">
-            Grades
-          </h1>
-          <p className="page-subtitle">
-            {totalCount} grade record{totalCount !== 1 ? 's' : ''}
-          </p>
-        </div>
-        {canModify && (
-          <button className="btn btn-primary" onClick={openCreate} id="add-grade-btn">
-            <IconPlus /> Record Grade
-          </button>
-        )}
-      </div>
-
-      <div className="table-container">
-        <div className="table-toolbar">
-          <div className="table-search">
-            <IconSearch />
-            <input
-              type="text"
-              placeholder="Filter by student ID (e.g., STU-10001)"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              id="grade-search"
-            />
-          </div>
-          <button className="btn btn-secondary btn-sm" onClick={handleSearch}>
-            Filter
-          </button>
-        </div>
-
-        <div className="filter-row">
-          <span className="filter-label">Filter By:</span>
-          <select
-            className="filter-select"
-            value={filterSubject}
-            onChange={(e) => { setFilterSubject(e.target.value); setPage(1); }}
-            aria-label="Filter by Subject"
-          >
-            <option value="">All Subjects</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.code} - {s.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="filter-select"
-            value={filterTeacher}
-            onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}
-            aria-label="Filter by Teacher"
-          >
-            <option value="">All Teachers</option>
-            {teachers.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.first_name ? `${t.first_name} ${t.last_name}` : t.username}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="filter-select"
-            value={filterYear}
-            onChange={(e) => { setFilterYear(e.target.value); setPage(1); }}
-            aria-label="Filter by Year Level"
-          >
-            <option value="">All Year Levels</option>
-            <option value="1st Year">1st Year</option>
-            <option value="2nd Year">2nd Year</option>
-            <option value="3rd Year">3rd Year</option>
-            <option value="4th Year">4th Year</option>
-          </select>
-
-          {(search || filterSubject || filterTeacher || filterYear) && (
-            <button className="btn btn-ghost btn-sm" onClick={clearFilters}>
-              Reset Filters
-            </button>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="loading-page"><div className="spinner spinner-lg" /></div>
-        ) : grades.length === 0 ? (
-          <div className="table-empty">No grades found.</div>
-        ) : (
-          <table className="data-table" id="grades-table">
-            <thead>
-              <tr>
-                <th>Student</th>
-                <th>Subject</th>
-                <th>Score</th>
-                <th>Grade</th>
-                <th>Points</th>
-                <th>Recorded By</th>
-                {canModify && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {grades.map((g) => (
-                <tr key={g.id}>
-                  <td>
-                    <div>
-                      <div style={{ fontWeight: 500, color: 'var(--color-gray-900)' }}>{g.student_name}</div>
-                      <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>{g.student}</div>
-                    </div>
-                  </td>
-                  <td>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{g.subject_code}</div>
-                      <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>{g.subject_name}</div>
-                    </div>
-                  </td>
-                  <td>{g.score}</td>
-                  <td><span className={gradeBadgeClass(g.letter)} title={gradeDescription(g.letter)}>{g.letter}</span></td>
-                  <td>{g.grade_points}</td>
-                  <td style={{ color: 'var(--color-gray-500)' }}>{g.recorded_by_username || '—'}</td>
-                  {canModify && (
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn-icon btn-ghost" title="Edit" onClick={() => openEdit(g)}>
-                          <IconEdit />
-                        </button>
-                        <button className="btn-icon btn-ghost" title="Delete" onClick={() => handleDelete(g)}>
-                          <IconTrash />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {totalPages > 1 && (
-          <div className="table-pagination">
-            <span>Page {page} of {totalPages}</span>
-            <div className="table-pagination-buttons">
-              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
-              </button>
-              <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </button>
+      {studentGrades ? (
+        <StudentGradePanel
+          data={studentGrades}
+          loading={loadingGrades}
+          canModify={canModify}
+          onBack={closeStudent}
+          onAdd={() => openCreate(studentGrades.student_id)}
+          onEdit={openEdit}
+          onDelete={handleDelete}
+        />
+      ) : (
+        <>
+          <div className="page-header">
+            <div>
+              <h1 className="page-title">Grades</h1>
+              <p className="page-subtitle">
+                Pick a student to view and manage their grades
+              </p>
             </div>
           </div>
-        )}
-      </div>
 
+          <div className="table-container">
+            <div className="table-toolbar">
+              <div className="table-search">
+                <IconSearch />
+                <input
+                  type="text"
+                  placeholder="Search students by name, ID or program..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  id="grade-search"
+                />
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={handleSearch}>
+                Search
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="loading-page"><div className="spinner spinner-lg" /></div>
+            ) : students.length === 0 ? (
+              <div className="table-empty">No students found.</div>
+            ) : (
+              <table className="data-table data-table-clickable" id="grade-students-table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Program</th>
+                    <th>Year</th>
+                    <th>Subjects Graded</th>
+                    <th>GWA</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((s) => (
+                    <tr
+                      key={s.id}
+                      className="row-clickable"
+                      onClick={() => openStudent(s)}
+                      id={`student-grades-${s.id}`}
+                    >
+                      <td>
+                        <div style={{ fontWeight: 500, color: 'var(--color-gray-900)' }}>
+                          {s.name}
+                        </div>
+                        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>
+                          {s.id}
+                        </div>
+                      </td>
+                      <td style={{ color: 'var(--color-gray-600)' }}>{s.program || '—'}</td>
+                      <td style={{ color: 'var(--color-gray-600)' }}>{s.year_level || '—'}</td>
+                      <td>
+                        {s.grades_count ?? 0}
+                        {s.incomplete_count > 0 && (
+                          <span className="badge badge-gp-inc" style={{ marginLeft: 6 }}>
+                            {s.incomplete_count} INC
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: gwaColor(s.gwa ?? 5) }}>
+                          {(s.gwa ?? 5).toFixed(2)}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--color-gray-400)' }}>
+                        View grades &rsaquo;
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {totalPages > 1 && (
+              <div className="table-pagination">
+                <span>Page {page} of {totalPages}</span>
+                <div className="table-pagination-buttons">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
       {showModal && (
         <Modal
           title={editGrade ? 'Edit Grade' : 'Record Grade'}
@@ -317,17 +312,19 @@ export default function GradesPage() {
         >
           <form id="grade-form" onSubmit={handleSave}>
             <div className="form-group">
-              <label className="form-label" htmlFor="grade-student">Student</label>
+              <label className="form-label" htmlFor="grade-student">
+                Student
+              </label>
               <select
                 id="grade-student"
                 className="form-select"
                 value={form.student}
                 onChange={(e) => setForm({ ...form, student: e.target.value })}
                 required
-                disabled={!!editGrade}
+                disabled={!!editGrade || !!studentGrades}
               >
                 <option value="">Select student</option>
-                {students.map((s) => (
+                {studentOptions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.id} - {s.name}
                   </option>

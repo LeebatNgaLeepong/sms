@@ -103,7 +103,11 @@ class GradeSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
-    def validate_score(self, value: Decimal) -> Decimal:
+    def validate_score(self, value):
+        # score is nullable because an INC grade has none; the INC/score pairing
+        # is checked in validate().
+        if value is None:
+            return None
         if value < Decimal('0.00') or value > Decimal('100.00'):
             raise serializers.ValidationError("Score must be between 0.00 and 100.00.")
         return value

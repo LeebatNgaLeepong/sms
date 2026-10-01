@@ -35,6 +35,8 @@ class StudentSerializer(serializers.ModelSerializer):
         help_text="General Weighted Average: grade points weighted by subject units.",
     )
     units_earned = serializers.IntegerField(read_only=True)
+    grades_count = serializers.IntegerField(read_only=True)
+    incomplete_count = serializers.IntegerField(source='inc_count', read_only=True)
     sections = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -50,12 +52,14 @@ class StudentSerializer(serializers.ModelSerializer):
             'gpa',
             'gwa',
             'units_earned',
+            'grades_count',
+            'incomplete_count',
             'sections',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'gpa', 'gwa', 'units_earned', 'sections',
-                            'created_at', 'updated_at']
+        read_only_fields = ['id', 'gpa', 'gwa', 'units_earned', 'grades_count',
+                            'incomplete_count', 'sections', 'created_at', 'updated_at']
 
     def get_sections(self, obj):
         return [
