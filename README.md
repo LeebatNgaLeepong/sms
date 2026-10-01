@@ -138,6 +138,23 @@ score and a manual grade cannot both be set. Every grade also takes an optional
 remark, and grades recorded outside the configured bands still appear in the
 dashboard distribution rather than disappearing from it.
 
+## Who may change a grade
+
+- **Admins** may add, change, and remove any grade.
+- **Teachers** may read every grade, but may only change the grades for subjects
+  they are the assigned instructor of. A grade on someone else's subject is shown
+  as *view only* in both the Grades page and the student page, so the UI does not
+  offer an action the server would refuse.
+- **Students** may read their own grades and nothing more.
+
+Every grade row carries a `can_edit` flag computed by the server, so what the
+interface shows and what the API allows cannot drift apart.
+
+A Django superuser is treated as an admin even though `createsuperuser` leaves the
+`role` field at its default of `student`. Permission checks test `is_superuser`
+before the role for that reason; a superuser whose role is read first would be
+locked out of every write endpoint.
+
 ## Features
 
 - **Students** — auto-generated `STU-XXXXX` IDs, programs, year levels, GWA

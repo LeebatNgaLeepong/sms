@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api'
-import { IconChevronLeft, IconPlus, IconEdit } from '../components/Icons'
+import { IconChevronLeft, IconPlus, IconEdit, IconTrash } from '../components/Icons'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
+import GradeFormModal from '../components/GradeFormModal'
 import { gradeBadgeClass, gpaColor, gwaColor } from '../utils/grades'
 import TermFields from '../components/TermFields'
 import useTerms from '../hooks/useTerms'
@@ -12,7 +13,7 @@ import useTerms from '../hooks/useTerms'
 export default function StudentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { isAdmin } = useAuth()
+  const { isAdmin, isTeacher } = useAuth()
   const { addToast } = useToast()
   const { current } = useTerms()
 
@@ -27,6 +28,34 @@ export default function StudentDetailPage() {
   const [savingEnrollment, setSavingEnrollment] = useState(false)
   const [enrollTerm, setEnrollTerm] = useState(current)
   const [loadingSubjects, setLoadingSubjects] = useState(false)
+
+  // Grade editing modal state
+  const [showGradeModal, setShowGradeModal] = useState(false)
+  const [editGrade, setEditGrade] = useState(null)
+
+  const canModify = isAdmin || isTeacher
+
+  const openCreate = () => {
+    setEditGrade(null)
+    setShowGradeModal(true)
+  }
+
+  const openEdit = (grade) => {
+    setEditGrade(grade)
+    setShowGradeModal(true)
+  }
+
+  const handleDeleteGrade = async (grade) => {
+    if (!window.confirm(`Delete the grade for ${grade.subject.code}?`)) return
+    try {
+      await api.delete(`/grades/${grade.id}/`)
+      addToast('Grade deleted', 'success')
+      fetchStudentData()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      addToast(detail || 'Could not delete the grade', 'error')
+    }
+  }
 
   useEffect(() => {
     fetchStudentData()
@@ -231,12 +260,17 @@ export default function StudentDetailPage() {
           <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--color-gray-800)' }}>
             Grade Records
           </h3>
+          {canModify && (
+            <button className="btn btn-primary btn-sm" onClick={() => openCreate()} id="add-grade-btn">
+              <IconPlus /> Record Grade
+            </button>
+          )}
         </div>
 
         {data.grades.length === 0 ? (
           <div className="table-empty">No grades recorded yet.</div>
         ) : (
-          <table className="data-table">
+          <table className="data-table" id="student-grade-records">
             <thead>
               <tr>
                 <th>Subject Code</th>
@@ -246,6 +280,7 @@ export default function StudentDetailPage() {
                 <th>Grade</th>
                 <th>Points</th>
                 <th>Recorded By</th>
+                {canModify && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -254,16 +289,63 @@ export default function StudentDetailPage() {
                   <td style={{ fontWeight: 500 }}>{g.subject.code}</td>
                   <td>{g.subject.name}</td>
                   <td>{g.subject.units}</td>
-                  <td>{g.score}</td>
+                  <td>
+                    {g.score ?? <span className="badge badge-gp-inc">INC</span>}
+                    {g.remark && (
+                      <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>
+                        {g.remark}
+                      </div>
+                    )}
+                  </td>
                   <td><span className={gradeBadgeClass(g.letter)}>{g.letter}</span></td>
-                  <td>{g.grade_points}</td>
+                  <td>{g.grade_points ?? '—'}</td>
                   <td style={{ color: 'var(--color-gray-500)' }}>{g.recorded_by || '—'}</td>
+                  {canModify && (
+                    <td>
+                      <div className="table-actions">
+                        {g.can_edit ? (
+                          <>
+                            <button
+                              className="btn-icon btn-ghost"
+                              title={`Edit ${g.subject.code}`}
+                              onClick={() => openEdit(g)}
+                            >
+                              <IconEdit />
+                            </button>
+                            <button
+                              className="btn-icon btn-ghost"
+                              title="Delete"
+                              onClick={() => handleDeleteGrade(g)}
+                            >
+                              <IconTrash />
+                            </button>
+                          </>
+                        ) : (
+                          <span
+                            className="table-locked"
+                            title={`Only the teacher for ${g.subject.code}, or an admin, can change this grade.`}
+                          >
+                            view only
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      <GradeFormModal
+        show={showGradeModal}
+        grade={editGrade}
+        studentId={id}
+        studentName={data.name}
+        onClose={() => setShowGradeModal(false)}
+        onSaved={fetchStudentData}
+      />
 
       {/* Enroll Subjects Modal */}
       {showEnrollModal && (

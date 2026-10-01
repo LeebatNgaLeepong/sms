@@ -6,17 +6,28 @@ Enforces role-based permissions at the view and object levels.
 from rest_framework import permissions
 
 
+def is_admin(user) -> bool:
+    """
+    True for a real admin, and for any Django superuser.
+
+    A superuser created with createsuperuser keeps the model's default role,
+    which is 'student', so every check has to test is_superuser as well. Testing
+    the role first would lock a superuser out of every write endpoint.
+    """
+    return bool(
+        user
+        and user.is_authenticated
+        and (user.role == 'admin' or user.is_superuser)
+    )
+
+
 class IsAdmin(permissions.BasePermission):
     """
     Grants access only to users with the 'admin' role or Django superusers.
     """
 
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and (request.user.role == 'admin' or request.user.is_superuser)
-        )
+        return is_admin(request.user)
 
 
 class IsTeacher(permissions.BasePermission):
@@ -58,7 +69,7 @@ class IsAdminOrReadOnly(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
 
-        return bool(request.user.role == 'admin' or request.user.is_superuser)
+        return is_admin(request.user)
 
 
 class StudentPermission(permissions.BasePermission):
@@ -75,13 +86,13 @@ class StudentPermission(permissions.BasePermission):
 
         # Only Admin can create new student records
         if request.method == 'POST':
-            return bool(request.user.role == 'admin' or request.user.is_superuser)
+            return is_admin(request.user)
 
         return True
 
     def has_object_permission(self, request, view, obj):
         # Admin has full access (read and write)
-        if request.user.role == 'admin' or request.user.is_superuser:
+        if is_admin(request.user):
             return True
 
         # Teacher has read-only access to any student
@@ -110,7 +121,7 @@ class SubjectPermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
 
-        return bool(request.user.role == 'admin' or request.user.is_superuser)
+        return is_admin(request.user)
 
 
 class GradePermission(permissions.BasePermission):
@@ -130,16 +141,20 @@ class GradePermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
 
+        # A superuser keeps the default 'student' role, so test admin before student.
+        if is_admin(request.user):
+            return True
+
         # Students cannot create/modify grades
         if request.user.role == 'student':
             return False
 
-        # Admin and Teacher can attempt write (Teacher subject assignment checked in serializer/object perm)
+        # Teacher can attempt write (subject ownership checked in has_object_permission)
         return True
 
     def has_object_permission(self, request, view, obj):
         # Admin has full access
-        if request.user.role == 'admin' or request.user.is_superuser:
+        if is_admin(request.user):
             return True
 
         # Teacher can read any grade, but can only modify grades for their assigned subject

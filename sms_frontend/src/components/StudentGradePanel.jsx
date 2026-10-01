@@ -121,20 +121,31 @@ export default function StudentGradePanel({
                   {canModify && (
                     <td>
                       <div className="table-actions">
-                        <button
-                          className="btn-icon btn-ghost"
-                          title="Edit"
-                          onClick={() => onEdit(g)}
-                        >
-                          <IconEdit />
-                        </button>
-                        <button
-                          className="btn-icon btn-ghost"
-                          title="Delete"
-                          onClick={() => onDelete(g)}
-                        >
-                          <IconTrash />
-                        </button>
+                        {g.can_edit ? (
+                          <>
+                            <button
+                              className="btn-icon btn-ghost"
+                              title={`Edit ${g.subject.code}`}
+                              onClick={() => onEdit(g)}
+                            >
+                              <IconEdit />
+                            </button>
+                            <button
+                              className="btn-icon btn-ghost"
+                              title="Delete"
+                              onClick={() => onDelete(g)}
+                            >
+                              <IconTrash />
+                            </button>
+                          </>
+                        ) : (
+                          <span
+                            className="table-locked"
+                            title={`Only the teacher for ${g.subject.code}, or an admin, can change this grade.`}
+                          >
+                            view only
+                          </span>
+                        )}
                       </div>
                     </td>
                   )}

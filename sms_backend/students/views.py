@@ -13,6 +13,7 @@ from django.db.models import Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import StudentPermission
+from schedules import scheduler
 from schedules.terms import InvalidTerm, resolve_term
 from subjects.models import Subject
 from .models import Student
@@ -85,7 +86,23 @@ class StudentViewSet(viewsets.ModelViewSet):
         Enforces object-level permission check (only Admin, Teacher, or the Student themselves).
         """
         student = self.get_object()
-        grades_qs = student.grades.select_related('subject', 'recorded_by').order_by('subject__code')
+        grades_qs = student.grades.select_related(
+            'subject', 'subject__instructor', 'recorded_by'
+        ).order_by('subject__code')
+
+        viewer = request.user
+
+        def can_edit(grade):
+            """Whether this viewer may change this grade.
+
+            Mirrors GradePermission so the UI can hide actions that would be
+            refused instead of letting the teacher click into a failure.
+            """
+            if viewer.role == 'admin' or viewer.is_superuser:
+                return True
+            if viewer.role == 'teacher':
+                return grade.subject.instructor_id == viewer.id
+            return False
 
         grades_data = []
         for g in grades_qs:
@@ -103,6 +120,7 @@ class StudentViewSet(viewsets.ModelViewSet):
                 'is_incomplete': g.is_incomplete,
                 'manual_points': str(g.manual_points) if g.manual_points is not None else None,
                 'remark': g.remark,
+                'can_edit': can_edit(g),
                 'recorded_by': g.recorded_by.username if g.recorded_by else None,
                 'created_at': g.created_at,
                 'updated_at': g.updated_at,
@@ -170,19 +188,26 @@ class StudentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+    @staticmethod
+    def _parse_subject_ids(data):
+        """
+        Normalises subject_ids from JSON arrays or multipart form-data lists
+        and validates that all supplied IDs are digits.
+        """
+        if hasattr(data, 'getlist'):
+            raw = data.getlist('subject_ids')
+        else:
+            raw = data.get('subject_ids', [])
+        if not isinstance(raw, (list, tuple)):
+            raw = [raw]
+
+        cleaned = [str(i).strip() for i in raw if str(i).strip()]
+        invalid = [i for i in cleaned if not i.isdigit()]
+        return cleaned, invalid
+
     def _enroll(self, request):
         student = self.get_object()
-        # QueryDict (multipart/form-data) needs getlist() to keep every repeated id.
-        if hasattr(request.data, 'getlist'):
-            subject_ids = request.data.getlist('subject_ids')
-        else:
-            subject_ids = request.data.get('subject_ids', [])
-        if not isinstance(subject_ids, (list, tuple)):
-            subject_ids = [subject_ids]
-        # Ids arrive as strings over form-data and JSON alike, so normalise them
-        # before they reach the database and fail on a non-numeric value.
-        subject_ids = [str(i).strip() for i in subject_ids if str(i).strip()]
-        invalid = [i for i in subject_ids if not i.isdigit()]
+        subject_ids, invalid = self._parse_subject_ids(request.data)
         if invalid:
             return Response(
                 {'detail': f"Invalid subject_ids: {', '.join(invalid)}. Expected numbers."},
@@ -204,9 +229,8 @@ class StudentViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             student.enrolled_subjects.set(subjects)
 
-            from schedules.scheduler import regenerate_student_schedule
             try:
-                schedule_result = regenerate_student_schedule(
+                schedule_result = scheduler.regenerate_student_schedule(
                     student, semester=semester, school_year=school_year
                 )
             except Exception:

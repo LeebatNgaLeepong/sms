@@ -319,6 +319,201 @@ class WeightedAverageTests(APITestCase):
         self.assertEqual(res.data['units_earned'], 3)
 
 
+class TeacherGradeEditingTests(APITestCase):
+    """
+    A teacher can change grades for the subjects they teach, and the API says
+    so up front so the UI does not offer an action that would be refused.
+    """
+
+    def setUp(self):
+        self.teacher = get_user_model().objects.create_user(
+            username='ge_teacher', email='ge_teacher@t.com', password='pw',
+            role=get_user_model().ROLE_TEACHER,
+        )
+        self.other_teacher = get_user_model().objects.create_user(
+            username='ge_teacher2', email='ge_teacher2@t.com', password='pw',
+            role=get_user_model().ROLE_TEACHER,
+        )
+        self.admin = get_user_model().objects.create_superuser(
+            username='ge_admin', email='ge_admin@t.com', password='pw'
+        )
+        self.student = Student.objects.create(
+            user=get_user_model().objects.create_user(
+                username='ge_student', email='ge_student@t.com', password='pw',
+                role=get_user_model().ROLE_STUDENT,
+            ),
+            name='Grade Student', email='ge_student@t.com',
+            program='BS CS', year_level='2nd Year',
+        )
+        self.mine = Subject.objects.create(
+            code='GE101', name='My Subject', units=3, instructor=self.teacher
+        )
+        self.theirs = Subject.objects.create(
+            code='GE201', name='Their Subject', units=3, instructor=self.other_teacher
+        )
+        self.my_grade = Grade.objects.create(
+            student=self.student, subject=self.mine, score=Decimal('88.00'),
+            recorded_by=self.admin,
+        )
+        self.their_grade = Grade.objects.create(
+            student=self.student, subject=self.theirs, score=Decimal('77.00'),
+            recorded_by=self.admin,
+        )
+
+    def _panel(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client.get(
+            reverse('student-grades', kwargs={'pk': self.student.id})
+        )
+
+    def test_teacher_sees_which_grades_they_may_edit(self):
+        res = self._panel(self.teacher)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        by_subject = {g['subject']['code']: g for g in res.data['grades']}
+        self.assertTrue(by_subject['GE101']['can_edit'], 'own subject must be editable')
+        self.assertFalse(
+            by_subject['GE201']['can_edit'],
+            "another teacher's subject must not be editable",
+        )
+
+    def test_admin_may_edit_every_grade(self):
+        res = self._panel(self.admin)
+        self.assertTrue(all(g['can_edit'] for g in res.data['grades']))
+
+    def test_student_may_not_edit_any_grade(self):
+        student_user = self.student.user
+        res = self._panel(student_user)
+        self.assertFalse(any(g['can_edit'] for g in res.data['grades']))
+
+    def test_teacher_can_update_own_subject_grade(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.put(
+            reverse('grade-detail', kwargs={'pk': self.my_grade.id}),
+            {
+                'student': self.student.id,
+                'subject': self.mine.id,
+                'score': '95.50',
+                'is_incomplete': False,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['letter'], '1.25')
+        self.my_grade.refresh_from_db()
+        self.assertEqual(self.my_grade.letter, '1.25')
+
+    def test_teacher_is_refused_another_teachers_grade(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.put(
+            reverse('grade-detail', kwargs={'pk': self.their_grade.id}),
+            {
+                'student': self.student.id,
+                'subject': self.theirs.id,
+                'score': '99.00',
+                'is_incomplete': False,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.their_grade.refresh_from_db()
+        self.assertEqual(self.their_grade.letter, '2.75', 'the grade must be unchanged')
+
+    def test_flag_agrees_with_what_the_api_allows(self):
+        """What the panel calls editable must actually be writable."""
+        for user, grade in (
+            (self.teacher, self.my_grade),
+            (self.teacher, self.their_grade),
+            (self.admin, self.their_grade),
+        ):
+            with self.subTest(user=user.username, grade=grade.pk):
+                panel = self._panel(user)
+                row = next(g for g in panel.data['grades'] if g['id'] == grade.id)
+                self.client.force_authenticate(user=user)
+                res = self.client.put(
+                    reverse('grade-detail', kwargs={'pk': grade.id}),
+                    {
+                        'student': self.student.id,
+                        'subject': grade.subject_id,
+                        'score': str(grade.score),
+                        'is_incomplete': False,
+                    },
+                    format='json',
+                )
+                expected = 200 if row['can_edit'] else 403
+                self.assertEqual(res.status_code, expected)
+
+
+class SuperuserWriteAccessTests(APITestCase):
+    """
+    A superuser made with createsuperuser keeps the default 'student' role.
+
+    Permission checks that test the role before is_superuser would lock that
+    account out of every write endpoint, which is what made grading impossible
+    for an admin created through createsuperuser.
+    """
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            username='su_only', email='su_only@t.com', password='pw'
+        )
+        self.student = Student.objects.create(
+            user=get_user_model().objects.create_user(
+                username='su_student', email='su_student@t.com', password='pw',
+                role=get_user_model().ROLE_STUDENT,
+            ),
+            name='Super Student', email='su_student@t.com',
+            program='BS CS', year_level='1st Year',
+        )
+        self.subject = Subject.objects.create(code='SU101', name='Super', units=3)
+
+    def test_superuser_default_role_is_still_student(self):
+        """Documents the trap: the role alone would deny access."""
+        self.assertTrue(self.admin.is_superuser)
+        self.assertEqual(self.admin.role, get_user_model().ROLE_STUDENT)
+
+    def test_superuser_can_create_a_grade(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('grade-list'),
+            {'student': self.student.id, 'subject': self.subject.id, 'score': '90.00'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_superuser_can_create_a_student(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('student-list'),
+            {
+                'name': 'Made By Superuser',
+                'email': 'made_by_su@t.com',
+                'program': 'BS IT',
+                'year_level': '1st Year',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_superuser_can_create_a_subject(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('subject-list'),
+            {'code': 'SU201', 'name': 'Super Subject', 'units': 3},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_real_student_is_still_blocked(self):
+        """The fix must not hand write access to ordinary students."""
+        self.client.force_authenticate(user=self.student.user)
+        res = self.client.post(
+            reverse('grade-list'),
+            {'student': self.student.id, 'subject': self.subject.id, 'score': '90.00'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
 class GradeLogicAndAPITests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(

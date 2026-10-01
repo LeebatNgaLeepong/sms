@@ -1340,6 +1340,16 @@ table {
   margin-bottom: var(--space-5);
 }
 
+.table-locked {
+  font-size: var(--font-xs);
+  color: var(--color-gray-400);
+  background: var(--color-gray-100);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  cursor: help;
+  white-space: nowrap;
+}
+
 .grade-preview {
   display: flex;
   align-items: center;
