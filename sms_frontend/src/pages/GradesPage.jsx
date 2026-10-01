@@ -5,7 +5,8 @@ import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import StudentGradePanel from '../components/StudentGradePanel'
 import { IconSearch, IconPlus } from '../components/Icons'
-import { gwaColor } from '../utils/grades'
+import { gwaColor, gradeBadgeClass } from '../utils/grades'
+import useGradeScale from '../hooks/useGradeScale'
 
 export default function GradesPage() {
   const [students, setStudents] = useState([])
@@ -16,7 +17,14 @@ export default function GradesPage() {
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editGrade, setEditGrade] = useState(null)
-  const [form, setForm] = useState({ student: '', subject: '', score: '', is_incomplete: false })
+  const [form, setForm] = useState({
+    student: '',
+    subject: '',
+    score: '',
+    is_incomplete: false,
+    manual_points: '',
+    remark: '',
+  })
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -25,8 +33,20 @@ export default function GradesPage() {
 
   const { isAdmin, isTeacher, isStudent } = useAuth()
   const { addToast } = useToast()
+  const { bands, bandForScore, bandForPoints } = useGradeScale()
 
   const canModify = isAdmin || isTeacher
+
+  // Show what the server will record before it is saved.
+  const preview = form.is_incomplete
+    ? { letter: 'INC', points: 0, label: 'Not counted' }
+    : form.manual_points
+      ? bandForPoints(form.manual_points) || {
+          letter: Number(form.manual_points).toFixed(2),
+          points: form.manual_points,
+          label: 'Manual entry',
+        }
+      : bandForScore(form.score)
 
   useEffect(() => {
     fetchStudents()
@@ -96,6 +116,8 @@ export default function GradesPage() {
       subject: '',
       score: '',
       is_incomplete: false,
+      manual_points: '',
+      remark: '',
     })
     setShowModal(true)
   }
@@ -107,6 +129,8 @@ export default function GradesPage() {
       subject: grade.subject?.id ?? '',
       score: grade.score ?? '',
       is_incomplete: Boolean(grade.is_incomplete),
+      manual_points: grade.manual_points ?? '',
+      remark: grade.remark ?? '',
     })
     setShowModal(true)
   }
@@ -118,8 +142,11 @@ export default function GradesPage() {
       const payload = {
         student: form.student,
         subject: parseInt(form.subject),
-        score: form.is_incomplete ? null : form.score,
+        score: form.is_incomplete ? null : form.score === '' ? null : form.score,
         is_incomplete: form.is_incomplete,
+        manual_points:
+          form.is_incomplete || !form.manual_points ? null : form.manual_points,
+        remark: form.remark || '',
       }
       if (editGrade) {
         await api.put(`/grades/${editGrade.id}/`, payload)
@@ -299,7 +326,13 @@ return (
       )}
       {showModal && (
         <Modal
-          title={editGrade ? 'Edit Grade' : 'Record Grade'}
+          title={
+            editGrade
+              ? 'Edit Grade'
+              : form.is_incomplete
+                ? 'Mark as INC'
+                : 'Record Grade'
+          }
           onClose={() => setShowModal(false)}
           footer={
             <>
@@ -362,10 +395,26 @@ return (
                 step="0.01"
                 value={form.score}
                 onChange={(e) => setForm({ ...form, score: e.target.value })}
-                disabled={form.is_incomplete}
-                required={!form.is_incomplete}
-                placeholder={form.is_incomplete ? 'Not applicable for INC' : 'e.g., 85.50'}
+                disabled={form.is_incomplete || !!form.manual_points}
+                required={!form.is_incomplete && !form.manual_points}
+                placeholder={
+                  form.is_incomplete
+                    ? 'Not applicable for INC'
+                    : form.manual_points
+                      ? 'Not used when a grade is chosen'
+                      : 'e.g., 85.50'
+                }
               />
+              {preview && (
+                <div className="grade-preview" id="grade-preview">
+                  <span className="grade-preview-label">Records as</span>
+                  <span className={`badge ${gradeBadgeClass(preview.letter)}`}>{preview.letter}</span>
+                  <span className="grade-preview-points">{Number(preview.points).toFixed(2)}</span>
+                  {preview.label && (
+                    <span className="grade-preview-label-text">{preview.label}</span>
+                  )}
+                </div>
+              )}
               <label className="checkbox-row" htmlFor="grade-incomplete">
                 <input
                   id="grade-incomplete"
@@ -376,6 +425,7 @@ return (
                       ...form,
                       is_incomplete: e.target.checked,
                       score: e.target.checked ? '' : form.score,
+                      manual_points: e.target.checked ? '' : form.manual_points,
                     })
                   }
                 />
@@ -387,6 +437,52 @@ return (
                 INC means the subject is not finished. It has no grade points and is left
                 out of GPA and GWA.
               </p>
+            </div>
+
+            {!form.is_incomplete && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="grade-manual">
+                  Or choose the grade directly
+                </label>
+                <select
+                  id="grade-manual"
+                  className="form-select"
+                  value={form.manual_points}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      manual_points: e.target.value,
+                      score: e.target.value ? '' : form.score,
+                    })
+                  }
+                >
+                  <option value="">Use the score bands above</option>
+                  {bands.map((b) => (
+                    <option key={b.letter} value={b.points}>
+                      {b.letter} — {b.label} ({b.description})
+                    </option>
+                  ))}
+                  <option value="4.00">4.00 — Manual entry (no band)</option>
+                </select>
+                <p className="form-hint">
+                  Setting a grade here overrides the score bands, which is how you record a
+                  grade the scale has no band for, such as 4.00.
+                </p>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="grade-remark">
+                Remark (optional)
+              </label>
+              <input
+                id="grade-remark"
+                className="form-input"
+                maxLength={255}
+                value={form.remark}
+                onChange={(e) => setForm({ ...form, remark: e.target.value })}
+                placeholder="e.g. Retake passed, approved by dean"
+              />
             </div>
           </form>
         </Modal>

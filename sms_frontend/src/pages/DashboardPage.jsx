@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -9,6 +9,7 @@ import {
   IconPercent,
 } from '../components/Icons'
 import { GRADE_POINT_ORDER, gradeColor, gradeDescription, gpaColor } from '../utils/grades'
+import useGradeScale from '../hooks/useGradeScale'
 
 export default function DashboardPage() {
   const [data, setData] = useState(null)
@@ -44,7 +45,19 @@ export default function DashboardPage() {
   }
 
   const distribution = data.grade_distribution || {}
-  const maxGrade = Math.max(...GRADE_POINT_ORDER.map((key) => distribution[key] || 0), 1)
+  const { bands, passingPoints, bandForPoints } = useGradeScale()
+  // Scale bands first, then any grade actually recorded that the scale does not
+// define (for example a manually entered 4.00).
+  const gradeOrder = useMemo(() => {
+    const base = bands.length ? bands.map((b) => b.letter) : GRADE_POINT_ORDER
+    const extra = Object.keys(distribution).filter((k) => !base.includes(k))
+    const rank = (k) => {
+      const band = bands.find((b) => b.letter === k)
+      return band ? Number(band.points) : 99
+    }
+    return [...base, ...extra].sort((a, b) => rank(a) - rank(b))
+  }, [bands, distribution])
+  const maxGrade = Math.max(...gradeOrder.map((key) => distribution[key] || 0), 1)
 
   return (
     <div>
@@ -110,21 +123,35 @@ export default function DashboardPage() {
       <div className="chart-card">
         <h3 className="chart-card-title">Grade Distribution</h3>
         <div className="grade-bars">
-          {GRADE_POINT_ORDER.map((key) => (
-            <div key={key} className="grade-bar-row" title={gradeDescription(key)}>
-              <span className="grade-bar-label">{key}</span>
-              <div className="grade-bar-track">
-                <div
-                  className="grade-bar-fill"
-                  style={{
-                    width: `${((distribution[key] || 0) / maxGrade) * 100}%`,
-                    background: gradeColor(key),
-                  }}
-                />
+          {gradeOrder.map((key) => {
+            const band = bandForPoints(
+              bands.find((b) => b.letter === key)?.points ?? key
+            )
+            const fill = gradeColor(key)
+            return (
+              <div
+                key={key}
+                className="grade-bar-row"
+                title={
+                  band
+                    ? `${band.label} (${band.description})`
+                    : `${key} (recorded outside the grade scale)`
+                }
+              >
+                <span className="grade-bar-label">{key}</span>
+                <div className="grade-bar-track">
+                  <div
+                    className="grade-bar-fill"
+                    style={{
+                      width: `${((distribution[key] || 0) / maxGrade) * 100}%`,
+                      background: fill,
+                    }}
+                  />
+                </div>
+                <span className="grade-bar-count">{distribution[key] || 0}</span>
               </div>
-              <span className="grade-bar-count">{distribution[key] || 0}</span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>

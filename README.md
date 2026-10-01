@@ -33,17 +33,40 @@ concurrently without clashing. A student takes one section of a subject per term
 ## Grades and GWA
 
 Scores 0–100 are converted server-side to the University of Antique 1.00–5.00
-scale (lower is better, 3.00 passes, 5.00 fails).
+scale (lower is better). 3.00 passes, 5.00 is a fail, and **INC** marks a subject
+that is not finished — it carries no grade points and is excluded from averages.
 
 Two figures are reported, and they differ on purpose:
 
 - **GPA** — the simple mean of grade points.
 - **GWA (General Weighted Average)** — grade points weighted by subject units:
-  `sum(grade_points × units) / sum(units)`. This is the figure of merit the
-  university records, and it is what the student list, student page, and
-  dashboard show.
+  `sum(grade_points × units) / sum(units)`. This is the figure the university
+  records, and it is what the student list, student page, and dashboard show.
 
-A student with no recorded grades has 5.00 for both.
+A student with no graded subjects has 5.00 for both.
+
+### Configuring the scale
+
+The bands live in `GRADE_SCALE` in `sms_project/settings.py`, highest score first,
+and are the single source of truth. To add a band (for example **4.00**, which
+the default scale leaves out), insert an entry above the catch-all band:
+
+```python
+{'min': 74.00, 'letter': '4.00', 'points': 4.00, 'label': 'Conditional', 'description': '70-74'},
+{'min': None, 'letter': '5.00', 'points': 5.00, 'label': 'Failed', 'description': 'Below 70'},
+```
+
+The last band must keep `'min': None` so any low score still receives a grade.
+`GET /api/grades/scale/` serves the configured bands, so the UI always offers
+exactly the grades the backend will record.
+
+### Manual grades and remarks
+
+Staff can set grade points directly instead of a score, which is how you record a
+grade the scale has no band for — such as a **4.00** — or a retake outcome. A
+score and a manual grade cannot both be set. Every grade also takes an optional
+remark, and grades recorded outside the configured bands still appear in the
+dashboard distribution rather than disappearing from it.
 
 ## Features
 

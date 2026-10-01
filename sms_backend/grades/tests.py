@@ -164,6 +164,104 @@ class IncompleteGradeTests(APITestCase):
         self.assertNotEqual(str(grade.grade_points), '4.00')
 
 
+class ConfigurableScaleTests(APITestCase):
+    """The grading bands come from settings, and staff can override them."""
+
+    def setUp(self):
+        self.student = Student.objects.create(
+            user=get_user_model().objects.create_user(
+                username='scale_user', email='scale_user@t.com', password='pw',
+                role=get_user_model().ROLE_STUDENT,
+            ),
+            name='Scale Student',
+            email='scale_user@t.com',
+            program='BS CS',
+            year_level='1st Year',
+        )
+        self.subject = Subject.objects.create(code='SCL101', name='Scale', units=3)
+        self.teacher = get_user_model().objects.create_user(
+            username='scale_teacher', email='scale_teacher@t.com', password='pw',
+            role=get_user_model().ROLE_TEACHER,
+        )
+        self.subject.instructor = self.teacher
+        self.subject.save()
+        self.client.force_authenticate(user=self.teacher)
+
+    def test_scale_endpoint_lists_configured_bands(self):
+        res = self.client.get(reverse('grade-scale'))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        letters = [b['letter'] for b in res.data['bands']]
+        self.assertEqual(letters[0], '1.00')
+        self.assertEqual(letters[-1], '5.00', 'scale must end with a catch-all band')
+        self.assertEqual(res.data['incomplete'], 'INC')
+
+    def test_manual_grade_bypasses_the_bands(self):
+        """A grade with no band, such as 4.00, can be recorded deliberately."""
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': None,
+                'manual_points': '4.00',
+                'remark': 'Retake, approved by dean',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['letter'], '4.00')
+        self.assertEqual(res.data['grade_points'], '4.00')
+        self.assertEqual(res.data['remark'], 'Retake, approved by dean')
+
+    def test_manual_grade_with_a_band_reuses_that_code(self):
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': None,
+                'manual_points': '1.50',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['letter'], '1.50')
+
+    def test_manual_grade_and_score_together_are_rejected(self):
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id,
+                'subject': self.subject.id,
+                'score': '90.00',
+                'manual_points': '2.00',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('manual_points', res.data)
+
+    def test_failing_score_falls_to_the_catch_all_band(self):
+        grade = Grade.objects.create(
+            student=self.student, subject=self.subject, score=Decimal('74.00'),
+            recorded_by=self.teacher,
+        )
+        self.assertEqual(grade.letter, '5.00')
+        self.assertEqual(grade.grade_points, Decimal('5.00'))
+
+    def test_manual_grade_is_counted_in_gwa(self):
+        Grade.objects.create(
+            student=self.student, subject=self.subject, score=Decimal('99.00'),
+            recorded_by=self.teacher,
+        )
+        before = self.student.gwa
+        grade = Grade.objects.filter(student=self.student).first()
+        grade.manual_points = Decimal('4.00')
+        grade.score = None
+        grade.save()
+        self.assertNotEqual(self.student.gwa, before)
+
+
 class WeightedAverageTests(APITestCase):
     """GWA weights grade points by subject units; the simple GPA does not."""
 

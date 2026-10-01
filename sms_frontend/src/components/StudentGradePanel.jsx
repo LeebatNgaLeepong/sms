@@ -93,9 +93,21 @@ export default function StudentGradePanel({
                     </div>
                   </td>
                   <td>{g.subject.units}</td>
-                  <td style={{ fontWeight: 500 }}>
-                    {g.score ?? <span className="badge badge-gp-inc">INC</span>}
-                  </td>
+<td>
+                      <div style={{ fontWeight: 500 }}>{g.score ?? '—'}</div>
+                      {g.remark && (
+                        <div
+                          style={{
+                            fontSize: 'var(--font-xs)',
+                            color: 'var(--color-gray-400)',
+                            maxWidth: 180,
+                          }}
+                          title={g.remark}
+                        >
+                          {g.remark}
+                        </div>
+                      )}
+                    </td>
                   <td>
                     <span
                       className={gradeBadgeClass(g.letter)}

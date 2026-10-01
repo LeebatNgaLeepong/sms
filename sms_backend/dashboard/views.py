@@ -4,6 +4,7 @@ Provides summary metrics including counts, system-wide average GPA, and grade di
 """
 
 from decimal import Decimal
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from rest_framework.permissions import IsAuthenticated
@@ -49,24 +50,27 @@ class DashboardSummaryView(APIView):
             average_gpa = 0.00
             average_gwa = 0.00
 
-        # Grade distribution breakdown (University of Antique scale)
+        # Grade distribution breakdown, following the configured grading scale
+        from grades.models import GRADE_INC
+
         distribution_counts = (
             Grade.objects.values('letter').annotate(count=Count('id')).order_by('letter')
         )
         distribution_dict = {
-            '1.00': 0, '1.25': 0, '1.50': 0, '1.75': 0,
-            '2.00': 0, '2.25': 0, '2.50': 0, '2.75': 0,
-            '3.00': 0, 'INC': 0, '5.00': 0,
+            str(band['letter']): 0 for band in settings.GRADE_SCALE
         }
+        distribution_dict[GRADE_INC] = 0
         for item in distribution_counts:
             letter = item['letter']
-            if letter in distribution_dict:
-                distribution_dict[letter] = item['count']
+            # Grades outside the configured bands (manual entries) are added too,
+            # so a recorded grade is never silently dropped from the chart.
+            distribution_dict[letter] = item['count']
 
         # Passing grades are 1.00-3.00; 5.00 is fail. Counted from grade_points
         # rather than the letter dict so an unrecognised letter cannot skew it.
         passing_grades_count = Grade.objects.filter(
-            grade_points__lte=Decimal('3.00')
+            grade_points__isnull=False,
+            grade_points__lte=Decimal(str(settings.PASSING_GRADE_POINTS)),
         ).count()
         passing_rate = (
             round((passing_grades_count / total_grades) * 100, 1)

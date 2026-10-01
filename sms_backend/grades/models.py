@@ -2,18 +2,8 @@
 Grades models for College Student Management System.
 Implements University of Antique grading scale (Philippine 1.0-5.0 system).
 
-Grading Scale:
-  1.00 = 98-100 (Excellent)
-  1.25 = 95-97
-  1.50 = 92-94
-  1.75 = 89-91
-  2.00 = 86-88
-  2.25 = 83-85
-  2.50 = 80-82
-  2.75 = 77-79
-  3.00 = 75-76 (Passing)
-  INC = Incomplete (no score yet, assigned by staff, excluded from averages)
-  5.00 = below 75 (Fail)
+The bands live in settings.GRADE_SCALE so they can be changed without touching
+code. See that setting for the default bands and how to add one.
 """
 
 from decimal import Decimal
@@ -28,30 +18,29 @@ GRADE_INC = 'INC'
 
 def compute_grade_details(score: Decimal | float) -> tuple[str, Decimal]:
     """
-    Derive University of Antique grade points server-side from score.
-    Uses the Philippine 1.0-5.0 grading scale.
+    Derive grade code and grade points from a score using settings.GRADE_SCALE.
+
+    Bands are checked highest first; the band with ``min: None`` is the
+    catch-all, so a score below the passing band lands on the failing grade
+    rather than being left ungraded.
     """
     score_val = Decimal(str(score))
-    if score_val >= Decimal('98.00'):
-        return '1.00', Decimal('1.00')
-    elif score_val >= Decimal('95.00'):
-        return '1.25', Decimal('1.25')
-    elif score_val >= Decimal('92.00'):
-        return '1.50', Decimal('1.50')
-    elif score_val >= Decimal('89.00'):
-        return '1.75', Decimal('1.75')
-    elif score_val >= Decimal('86.00'):
-        return '2.00', Decimal('2.00')
-    elif score_val >= Decimal('83.00'):
-        return '2.25', Decimal('2.25')
-    elif score_val >= Decimal('80.00'):
-        return '2.50', Decimal('2.50')
-    elif score_val >= Decimal('77.00'):
-        return '2.75', Decimal('2.75')
-    elif score_val >= Decimal('75.00'):
-        return '3.00', Decimal('3.00')
-    else:
-        return '5.00', Decimal('5.00')
+    for band in settings.GRADE_SCALE:
+        minimum = band.get('min')
+        if minimum is None or score_val >= Decimal(str(minimum)):
+            return str(band['letter']), Decimal(str(band['points']))
+    # Unreachable while the scale ends with a catch-all band.
+    last = settings.GRADE_SCALE[-1]
+    return str(last['letter']), Decimal(str(last['points']))
+
+
+def letter_for_points(points: Decimal | float) -> str:
+    """The grade code recorded for a given grade points value."""
+    points_val = Decimal(str(points))
+    for band in settings.GRADE_SCALE:
+        if Decimal(str(band['points'])) == points_val:
+            return str(band['letter'])
+    return f'{points_val:.2f}'
 
 
 class Grade(models.Model):
@@ -86,6 +75,21 @@ class Grade(models.Model):
     is_incomplete = models.BooleanField(
         default=False,
         help_text="Subject not completed yet. Recorded as INC with no grade points.",
+    )
+    manual_points = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Grade points entered directly by staff, overriding the score bands. "
+            "Use this to record a grade the scale has no band for."
+        ),
+    )
+    remark = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Optional note, e.g. a reason for a manual grade.",
     )
     letter = models.CharField(
         max_length=5,
@@ -125,14 +129,18 @@ class Grade(models.Model):
                 })
         elif self.score is None:
             raise ValidationError({
-                'score': 'Enter a score, or mark the grade as INC.',
+                'score': 'Enter a score, set grade points manually, or mark it as INC.',
             })
 
     def save(self, *args, **kwargs):
-        # Always derive letter and grade points server-side from score.
+        # Always derive letter and grade points server-side, never from input.
         if self.is_incomplete:
             self.letter = GRADE_INC
             self.grade_points = None
+        elif self.manual_points is not None:
+            # Staff set the grade points directly; the score bands are bypassed.
+            self.grade_points = self.manual_points
+            self.letter = letter_for_points(self.manual_points)
         else:
             letter, points = compute_grade_details(self.score)
             self.letter = letter
@@ -142,4 +150,4 @@ class Grade(models.Model):
     def __str__(self) -> str:
         if self.is_incomplete:
             return f"{self.student.id} - {self.subject.code}: INC"
-        return f"{self.student.id} - {self.subject.code}: {self.score} ({self.letter})"
+        return f"{self.student.id} - {self.subject.code}: {self.letter}"

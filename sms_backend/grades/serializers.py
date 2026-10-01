@@ -10,7 +10,7 @@ from rest_framework import serializers
 
 from students.models import Student
 from subjects.models import Subject
-from .models import Grade, compute_grade_details
+from .models import Grade, compute_grade_details, letter_for_points
 
 User = get_user_model()
 
@@ -55,6 +55,19 @@ class GradeSerializer(serializers.ModelSerializer):
         required=False,
         help_text="Mark the subject as not completed yet. Recorded as INC with no grade points.",
     )
+    manual_points = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Grade points set directly by staff, bypassing the score bands.",
+    )
+    remark = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text="Optional note, e.g. the reason for a manual grade.",
+    )
     letter = serializers.CharField(
         read_only=True,
         help_text="Server-computed grade (1.00 ... 5.00, or INC).",
@@ -86,6 +99,8 @@ class GradeSerializer(serializers.ModelSerializer):
             'subject_name',
             'score',
             'is_incomplete',
+            'manual_points',
+            'remark',
             'letter',
             'grade_points',
             'recorded_by',
@@ -123,21 +138,35 @@ class GradeSerializer(serializers.ModelSerializer):
             'is_incomplete',
             getattr(self.instance, 'is_incomplete', False),
         )
+        manual_points = attrs.get(
+            'manual_points',
+            getattr(self.instance, 'manual_points', None),
+        )
 
         if not student or not subject:
             raise serializers.ValidationError("Both student and subject must be provided.")
 
-        # An INC grade has no score, and a scored grade must have one.
+        # An INC grade has no score; a graded one needs a score or a manual grade.
         if is_incomplete:
             if score is not None:
                 raise serializers.ValidationError({
                     'score': 'An INC grade has no score. Clear the score first.'
                 })
             attrs['score'] = None
-        elif score is None:
-            raise serializers.ValidationError({
-                'score': 'Enter a score, or mark this grade as INC.'
-            })
+            attrs['manual_points'] = None
+        else:
+            if score is None and manual_points is None:
+                raise serializers.ValidationError({
+                    'score': 'Enter a score, set grade points manually, or mark this grade as INC.'
+                })
+            if manual_points is not None and score is not None:
+                raise serializers.ValidationError({
+                    'manual_points': 'Set either a score or manual grade points, not both.'
+                })
+            if manual_points is not None:
+                letter, points = letter_for_points(manual_points), Decimal(str(manual_points))
+                attrs['letter'] = letter
+                attrs['grade_points'] = points
 
         # Check unique constraint (student, subject)
         existing_grade = Grade.objects.filter(student=student, subject=subject)
@@ -156,7 +185,7 @@ class GradeSerializer(serializers.ModelSerializer):
                 )
 
         # Auto-compute letter and grade_points for payload preview/consistency
-        if not is_incomplete and score is not None:
+        if not is_incomplete and manual_points is None and score is not None:
             letter, points = compute_grade_details(score)
             attrs['letter'] = letter
             attrs['grade_points'] = points

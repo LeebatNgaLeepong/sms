@@ -101,6 +101,8 @@ class StudentViewSet(viewsets.ModelViewSet):
                 'letter': g.letter,
                 'grade_points': str(g.grade_points) if g.grade_points is not None else None,
                 'is_incomplete': g.is_incomplete,
+                'manual_points': str(g.manual_points) if g.manual_points is not None else None,
+                'remark': g.remark,
                 'recorded_by': g.recorded_by.username if g.recorded_by else None,
                 'created_at': g.created_at,
                 'updated_at': g.updated_at,

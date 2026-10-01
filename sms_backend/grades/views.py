@@ -4,6 +4,9 @@ Supports listing, filtering by student and subject, and strict role permissions.
 """
 
 from rest_framework import filters, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -53,6 +56,46 @@ class GradeViewSet(viewsets.ModelViewSet):
     filterset_class = GradeFilter
     ordering_fields = ['score', 'grade_points', 'created_at', 'updated_at']
     ordering = ['-updated_at']
+
+    @action(detail=False, methods=['get'], url_path='scale', permission_classes=[IsAuthenticated])
+    def scale(self, request):
+        """
+        GET /api/grades/scale/
+
+        The grade bands from settings.GRADE_SCALE, so the UI offers exactly the
+        grades the backend will record.
+        """
+        from django.conf import settings
+
+        from .models import GRADE_INC
+
+        return Response({
+            'bands': [
+                {
+                    'min': band.get('min'),
+                    'letter': band['letter'],
+                    'points': band['points'],
+                    'label': band.get('label'),
+                    'description': band.get('description'),
+                }
+                for band in settings.GRADE_SCALE
+            ],
+            'incomplete': GRADE_INC,
+            'passing_points': settings.PASSING_GRADE_POINTS,
+        })
+
+    @action(detail=False, methods=['get'], url_path='options', permission_classes=[IsAuthenticated])
+    def options(self, request):
+        """GET /api/grades/options/ : grade codes available for a manual grade."""
+        from django.conf import settings
+
+        from .models import GRADE_INC
+
+        return Response({
+            'manual_points': [band['points'] for band in settings.GRADE_SCALE],
+            'incomplete': GRADE_INC,
+            'passing_points': settings.PASSING_GRADE_POINTS,
+        })
 
     def get_queryset(self):
         user = self.request.user

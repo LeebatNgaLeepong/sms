@@ -57,6 +57,19 @@ class DashboardSummaryTests(APITestCase):
         self.assertEqual(res.data['grade_distribution']['1.25'], 1)
         self.assertEqual(res.data['grade_distribution']['2.25'], 1)
 
+    def test_distribution_includes_a_manual_grade_outside_the_scale(self):
+        """A manually recorded grade must not vanish from the chart."""
+        Grade.objects.create(
+            student=self.student1,
+            subject=self.subject2,
+            score=None,
+            manual_points=Decimal('4.00'),
+        )
+        self.client.force_authenticate(user=self.user)
+        res = self.client.get(reverse('dashboard_summary'))
+        self.assertIn('4.00', res.data['grade_distribution'])
+        self.assertEqual(res.data['grade_distribution']['4.00'], 1)
+
     def test_passing_rate_counts_passes_only(self):
         """A 5.00 (fail) must drag the passing rate down but not zero it out."""
         Grade.objects.create(
