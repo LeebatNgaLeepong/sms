@@ -114,7 +114,7 @@ export default function SubjectsPage() {
   }
 
   const handleAddSection = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     if (!sectionForm.code.trim()) return
     setSavingSection(true)
     try {
@@ -227,7 +227,7 @@ export default function SubjectsPage() {
   }
 
   const handleSave = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     setSaving(true)
     try {
       const payload = {

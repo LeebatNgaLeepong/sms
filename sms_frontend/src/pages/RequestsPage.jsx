@@ -95,7 +95,7 @@ export default function EnrollmentRequestsPage() {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     if (!form.subject) {
       addToast('Choose a subject first', 'error')
       return

@@ -75,7 +75,7 @@ export default function GradeFormModal({ show, grade, studentId, studentName, on
       : bandForScoreLocal(form.score)
 
   const handleSave = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     setSaving(true)
     const payload = {
       student: form.student,

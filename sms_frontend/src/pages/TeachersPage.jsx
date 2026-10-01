@@ -43,7 +43,7 @@ export default function TeachersPage() {
   }
 
   const handleSave = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     setSaving(true)
     try {
       if (editTeacher) {

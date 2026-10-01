@@ -1,5 +1,14 @@
 import { useCallback, useEffect } from 'react'
 
+// Minimal stand-in for a DOM event, so a submit-style handler can be called
+// from a click without tripping over e.preventDefault().
+const SAFE_EVENT = {
+  preventDefault() {},
+  stopPropagation() {},
+  target: null,
+  currentTarget: null,
+}
+
 /**
  * A dialog with macOS-style window controls.
  *
@@ -28,7 +37,10 @@ export default function Modal({
 
   const save = useCallback(() => {
     if (typeof onSave === 'function') {
-      onSave()
+      // Handlers are written as form submit handlers and begin with
+      // e.preventDefault(). Invoked from a click there is no event, so pass a
+      // stand-in or they throw before doing any work.
+      onSave(SAFE_EVENT)
       return
     }
     // No handler: submit the dialog's own form so HTML5 validation still applies.
