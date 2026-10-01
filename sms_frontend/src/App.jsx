@@ -11,6 +11,8 @@ import SubjectsPage from './pages/SubjectsPage'
 import GradesPage from './pages/GradesPage'
 import TeachersPage from './pages/TeachersPage'
 import SchedulesPage from './pages/SchedulesPage'
+import RequestsPage from './pages/RequestsPage'
+import MessagesPage from './pages/MessagesPage'
 
 function AppRoutes() {
   const { user } = useAuth()
@@ -33,6 +35,8 @@ function AppRoutes() {
         <Route path="/students/:id" element={<StudentDetailPage />} />
         <Route path="/subjects" element={<SubjectsPage />} />
         <Route path="/schedules" element={<SchedulesPage />} />
+        <Route path="/requests" element={<RequestsPage />} />
+        <Route path="/messages" element={<MessagesPage />} />
         <Route path="/teachers" element={<TeachersPage />} />
         <Route path="/grades" element={<GradesPage />} />
       </Route>

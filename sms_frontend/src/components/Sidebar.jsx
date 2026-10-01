@@ -9,6 +9,8 @@ import {
   IconTeacher,
   IconLogout,
   IconCalendar,
+  IconRequest,
+  IconMail,
 } from './Icons'
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -49,6 +51,18 @@ export default function Sidebar({ isOpen, onClose }) {
       label: 'Schedules',
       icon: <IconCalendar />,
       show: true,
+    },
+    {
+      to: '/requests',
+      label: 'Requests',
+      icon: <IconRequest />,
+      show: !isAdmin,
+    },
+    {
+      to: '/messages',
+      label: 'Messages',
+      icon: <IconMail />,
+      show: !isAdmin,
     },
     {
       to: '/teachers',

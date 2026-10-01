@@ -155,3 +155,61 @@ class GradePermission(permissions.BasePermission):
             return False
 
         return False
+
+
+class EnrollmentRequestPermission(permissions.BasePermission):
+    """
+    Permission rules for subject-add requests:
+    - Admin: read and decide on every request.
+    - Teacher: read requests aimed at the subjects they teach, and decide on them.
+    - Student: create requests and read only their own.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.role == 'admin' or user.is_superuser:
+            return True
+
+        if user.role == 'student':
+            # A student may only see and withdraw their own requests.
+            if request.method in permissions.SAFE_METHODS:
+                return obj.student.user == user
+            return obj.student.user == user and request.method == 'DELETE'
+
+        if user.role == 'teacher':
+            # Teachers handle requests for the subjects they teach.
+            teaches = obj.subject.instructor_id == user.id
+            if request.method in permissions.SAFE_METHODS:
+                return teaches
+            return teaches
+
+        return False
+
+
+class MessageThreadPermission(permissions.BasePermission):
+    """
+    Permission rules for student-teacher message threads:
+    - Admin: read every thread, but does not post into conversations.
+    - Student: threads where they are the student.
+    - Teacher: threads where they are the teacher.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.role == 'admin' or user.is_superuser:
+            return request.method in permissions.SAFE_METHODS
+        if user.role == 'student':
+            return obj.student.user == user
+        if user.role == 'teacher':
+            return obj.teacher_id == user.id
+        return False

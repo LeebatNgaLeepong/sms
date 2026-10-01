@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from grades.models import Grade
-from students.models import Student
+from students.models import EnrollmentRequest, Student
 from subjects.models import Subject
 
 User = get_user_model()
@@ -118,6 +118,385 @@ class StudentAPITests(APITestCase):
     def test_gpa_returns_5_when_no_grades(self):
         """Students with no grades should have GPA of 5.00 (fail) on Antique scale."""
         self.assertEqual(self.student2.gpa, 5.00)
+
+
+class EnrollmentRequestTests(APITestCase):
+    """
+    A student asks to add a subject; the teacher who teaches it decides.
+    """
+
+    def setUp(self):
+        from datetime import time
+
+        from schedules.models import TimeSlot
+
+        self.admin = User.objects.create_superuser(
+            username='req_admin', email='req_admin@t.com', password='pw'
+        )
+        self.teacher = User.objects.create_user(
+            username='req_teacher', email='req_teacher@t.com', password='pw',
+            role=User.ROLE_TEACHER,
+        )
+        self.other_teacher = User.objects.create_user(
+            username='req_teacher2', email='req_teacher2@t.com', password='pw',
+            role=User.ROLE_TEACHER,
+        )
+        self.student_user = User.objects.create_user(
+            username='req_student', email='req_student@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.other_user = User.objects.create_user(
+            username='req_student2', email='req_student2@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.student = Student.objects.create(
+            user=self.student_user, name='Request Student', email='req_student@t.com',
+            program='BS CS', year_level='2nd Year',
+        )
+        self.other_student = Student.objects.create(
+            user=self.other_user, name='Other Student', email='req_student2@t.com',
+            program='BS CS', year_level='2nd Year',
+        )
+        self.subject = Subject.objects.create(
+            code='REQ101', name='Requested Subject', units=3, instructor=self.teacher
+        )
+        self.taken = Subject.objects.create(
+            code='TAKEN1', name='Already Taken', units=3, instructor=self.teacher
+        )
+        self.student.enrolled_subjects.add(self.taken)
+        for day in ['Mon', 'Tue', 'Wed']:
+            TimeSlot.objects.create(
+                day=day, start_time=time(7, 0), end_time=time(9, 0), slot_type='lec'
+            )
+
+    def _request(self, **kwargs):
+        payload = {
+            'student': self.student.id,
+            'subject': self.subject.id,
+            'semester': '1st Sem',
+            'school_year': '2025-2026',
+            'reason': 'I need this for my major.',
+        }
+        payload.update(kwargs)
+        return payload
+
+    def test_student_can_file_a_request(self):
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['status'], 'pending')
+        self.assertEqual(res.data['student'], self.student.id)
+
+    def test_student_cannot_request_for_someone_else(self):
+        """Posting another student's id is coerced to the requester, not honoured."""
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('enrollment-request-list'),
+            self._request(student=self.other_student.id),
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            res.data['student'], self.student.id,
+            'the request must belong to the requester, never the id they posted',
+        )
+        self.assertFalse(EnrollmentRequest.objects.filter(
+            student=self.other_student
+        ).exists())
+
+    def test_teacher_and_admin_cannot_file_requests(self):
+        for user in (self.teacher, self.admin):
+            self.client.force_authenticate(user=user)
+            res = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, user.username)
+
+    def test_cannot_request_a_subject_already_enrolled(self):
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('enrollment-request-list'),
+            self._request(subject=self.taken.id),
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('subject', res.data)
+
+    def test_cannot_file_two_pending_requests_for_same_subject(self):
+        self.client.force_authenticate(user=self.student_user)
+        payload = self._request()
+        self.assertEqual(
+            self.client.post(reverse('enrollment-request-list'), payload, format='json').status_code,
+            status.HTTP_201_CREATED,
+        )
+        again = self.client.post(reverse('enrollment-request-list'), payload, format='json')
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_unknown_semester(self):
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('enrollment-request-list'),
+            self._request(semester='Ninth Term'),
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('semester', res.data)
+
+    def test_approving_enrolls_and_schedules(self):
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        request_id = created.data['id']
+
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('enrollment-request-decision', kwargs={'pk': request_id}),
+            {'decision': 'approved'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['status'], 'approved')
+
+        self.assertTrue(self.student.enrolled_subjects.filter(id=self.subject.id).exists())
+        # Both enrolled subjects now have a timetable entry.
+        self.assertEqual(self.student.schedules.count(), 2)
+
+    def test_rejecting_does_not_enroll(self):
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        request_id = created.data['id']
+
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('enrollment-request-decision', kwargs={'pk': request_id}),
+            {'decision': 'rejected', 'note': 'Class is full.'},
+            format='json',
+        )
+        self.assertEqual(res.data['status'], 'rejected')
+        self.assertFalse(self.student.enrolled_subjects.filter(id=self.subject.id).exists())
+
+    def test_unrelated_teacher_cannot_decide(self):
+        """A 404 is correct here: an unrelated teacher must not learn it exists."""
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+
+        self.client.force_authenticate(user=self.other_teacher)
+        res = self.client.post(
+            reverse('enrollment-request-decision', kwargs={'pk': created.data['id']}),
+            {'decision': 'approved'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(self.student.enrolled_subjects.filter(id=self.subject.id).exists())
+
+    def test_student_cannot_decide_their_own_request(self):
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        res = self.client.post(
+            reverse('enrollment-request-decision', kwargs={'pk': created.data['id']}),
+            {'decision': 'approved'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cannot_decide_twice(self):
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('enrollment-request-decision', kwargs={'pk': created.data['id']})
+        self.assertEqual(
+            self.client.post(url, {'decision': 'approved'}, format='json').status_code,
+            status.HTTP_200_OK,
+        )
+        again = self.client.post(url, {'decision': 'rejected'}, format='json')
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_students_only_see_their_own_requests(self):
+        self.client.force_authenticate(user=self.student_user)
+        self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+
+        self.client.force_authenticate(user=self.other_user)
+        res = self.client.get(reverse('enrollment-request-list'))
+        self.assertEqual(res.data['count'], 0)
+
+    def test_teacher_sees_requests_for_their_subjects_only(self):
+        self.client.force_authenticate(user=self.student_user)
+        self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+
+        self.client.force_authenticate(user=self.teacher)
+        mine = self.client.get(reverse('enrollment-request-list'))
+        self.assertEqual(mine.data['count'], 1)
+
+        self.client.force_authenticate(user=self.other_teacher)
+        theirs = self.client.get(reverse('enrollment-request-list'))
+        self.assertEqual(theirs.data['count'], 0)
+
+    def test_admin_can_decide(self):
+        self.client.force_authenticate(user=self.student_user)
+        created = self.client.post(reverse('enrollment-request-list'), self._request(), format='json')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('enrollment-request-decision', kwargs={'pk': created.data['id']}),
+            {'decision': 'approved'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+
+class MessageThreadTests(APITestCase):
+    """
+    Students and teachers can message each other, and nobody else.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='msg_admin', email='msg_admin@t.com', password='pw'
+        )
+        self.teacher = User.objects.create_user(
+            username='msg_teacher', email='msg_teacher@t.com', password='pw',
+            role=User.ROLE_TEACHER,
+        )
+        self.other_teacher = User.objects.create_user(
+            username='msg_teacher2', email='msg_teacher2@t.com', password='pw',
+            role=User.ROLE_TEACHER,
+        )
+        self.student_user = User.objects.create_user(
+            username='msg_student', email='msg_student@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.student = Student.objects.create(
+            user=self.student_user, name='Messaging Student', email='msg_student@t.com',
+            program='BS CS', year_level='2nd Year',
+        )
+        self.subject = Subject.objects.create(
+            code='MSG101', name='Messaging Subject', units=3, instructor=self.teacher
+        )
+
+    def _start_as_student(self):
+        self.client.force_authenticate(user=self.student_user)
+        return self.client.post(
+            reverse('thread-list'),
+            {'counterpart': self.teacher.id, 'subject': self.subject.id},
+            format='json',
+        )
+
+    def test_student_starts_thread_with_teacher(self):
+        res = self._start_as_student()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['counterpart_name'], self.teacher.username)
+        self.assertEqual(res.data['unread_count'], 0)
+
+    def test_starting_twice_reuses_the_thread(self):
+        first = self._start_as_student()
+        second = self._start_as_student()
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data['id'], second.data['id'])
+
+    def test_student_cannot_start_thread_with_another_student(self):
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('thread-list'),
+            {'counterpart': self.teacher.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        other_student_user = User.objects.create_user(
+            username='msg_student2', email='msg_student2@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.client.force_authenticate(user=other_student_user)
+        res = self.client.post(
+            reverse('thread-list'),
+            {'counterpart': self.student.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_cannot_start_a_thread(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('thread-list'),
+            {'counterpart': self.student.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_teacher_replies_in_the_student_thread(self):
+        thread_id = self._start_as_student().data['id']
+
+        self.client.force_authenticate(user=self.student_user)
+        self.client.post(
+            reverse('thread-messages', kwargs={'pk': thread_id}),
+            {'body': 'May I join CS101?'},
+            format='json',
+        )
+
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('thread-messages', kwargs={'pk': thread_id}),
+            {'body': 'Yes, fill out the form.'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        thread = self.client.get(reverse('thread-messages', kwargs={'pk': thread_id}))
+        bodies = [m['body'] for m in thread.data['messages']]
+        self.assertEqual(bodies, ['May I join CS101?', 'Yes, fill out the form.'])
+
+    def test_empty_message_is_rejected(self):
+        thread_id = self._start_as_student().data['id']
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('thread-messages', kwargs={'pk': thread_id}),
+            {'body': '   '},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unrelated_teacher_cannot_read_thread(self):
+        """404 is correct: an unrelated teacher must not learn the thread exists."""
+        thread_id = self._start_as_student().data['id']
+        self.client.force_authenticate(user=self.other_teacher)
+        res = self.client.get(reverse('thread-messages', kwargs={'pk': thread_id}))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unread_count_and_mark_as_read(self):
+        thread_id = self._start_as_student().data['id']
+        self.client.force_authenticate(user=self.student_user)
+        self.client.post(
+            reverse('thread-messages', kwargs={'pk': thread_id}),
+            {'body': 'Hello'},
+            format='json',
+        )
+
+        # The teacher has one unread message from the student.
+        self.client.force_authenticate(user=self.teacher)
+        listing = self.client.get(reverse('thread-list'))
+        self.assertEqual(listing.data['count'], 1)
+        self.assertEqual(listing.data['results'][0]['unread_count'], 1)
+
+        # Reading the conversation clears it.
+        self.client.get(reverse('thread-messages', kwargs={'pk': thread_id}))
+        listing = self.client.get(reverse('thread-list'))
+        self.assertEqual(listing.data['results'][0]['unread_count'], 0)
+
+    def test_students_only_see_their_own_threads(self):
+        self._start_as_student()
+        other_student_user = User.objects.create_user(
+            username='msg_student3', email='msg_student3@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.client.force_authenticate(user=other_student_user)
+        res = self.client.get(reverse('thread-list'))
+        self.assertEqual(res.data['count'], 0)
+
+    def test_teacher_starts_thread_with_student(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('thread-list'),
+            {'counterpart': self.student.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['counterpart_role'], 'student')
 
 
 class EnrollmentScheduleTests(APITestCase):

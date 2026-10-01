@@ -1369,6 +1369,226 @@ table {
   color: var(--color-gray-500);
 }
 
+.badge-pending {
+  background: var(--color-gold-100);
+  color: var(--color-gold-600);
+  text-transform: capitalize;
+}
+
+/* ============================================================
+   MESSENGER
+   ============================================================ */
+.messenger {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--space-4);
+  height: calc(100vh - 190px);
+  min-height: 420px;
+}
+
+.thread-list {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-list-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-gray-200);
+  color: var(--color-gray-400);
+}
+
+.thread-list-search input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: var(--font-sm);
+  background: transparent;
+  color: var(--color-gray-800);
+}
+
+.thread-list-empty,
+.thread-empty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-gray-500);
+  font-size: var(--font-sm);
+}
+
+.thread-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: none;
+  border-bottom: 1px solid var(--color-gray-100);
+  cursor: pointer;
+  color: inherit;
+}
+
+.thread-item:hover {
+  background: var(--color-gray-50);
+}
+
+.thread-item.active {
+  background: var(--color-gold-50);
+  border-left: 3px solid var(--color-red-500);
+}
+
+.thread-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.thread-item-name {
+  font-weight: 600;
+  color: var(--color-gray-900);
+  font-size: var(--font-sm);
+}
+
+.thread-unread {
+  background: var(--color-red-500);
+  color: var(--color-white);
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.thread-item-subject,
+.thread-item-preview {
+  font-size: var(--font-xs);
+  color: var(--color-gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-item-preview {
+  color: var(--color-gray-600);
+  margin-top: 2px;
+}
+
+.thread-item-time {
+  font-size: var(--font-xs);
+  color: var(--color-gray-400);
+  margin-top: var(--space-1);
+}
+
+.thread-panel {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.thread-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.thread-back {
+  display: none;
+}
+
+.thread-header-name {
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+
+.thread-header-sub {
+  font-size: var(--font-xs);
+  color: var(--color-gray-500);
+  text-transform: capitalize;
+}
+
+.thread-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-page);
+}
+
+.bubble-row {
+  display: flex;
+}
+
+.bubble-row.mine {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 72%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+}
+
+.bubble-row.mine .bubble {
+  background: var(--color-red-500);
+  border-color: var(--color-red-500);
+  color: var(--color-white);
+}
+
+.bubble-body {
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble-time {
+  font-size: 0.6875rem;
+  color: var(--color-gray-400);
+  margin-top: 2px;
+  text-align: right;
+}
+
+.bubble-row.mine .bubble-time {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.thread-composer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.thread-composer .form-input {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .messenger {
+    grid-template-columns: 1fr;
+  }
+  .thread-back {
+    display: inline-flex;
+  }
+}
+
 /* ============================================================
    ERROR BOUNDARY SCREEN
    Shown instead of a blank page when a render error occurs.

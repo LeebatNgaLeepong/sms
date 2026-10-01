@@ -9,6 +9,32 @@ A full-stack Student Management System application with Django REST Framework ba
 └── sms_frontend/      # React + Vite frontend
 ```
 
+## Subject requests
+
+Students do not edit their own load directly. They file a **subject request** and
+the instructor for that subject (or an admin) approves or rejects it. Approving
+enrolls the student and rebuilds their timetable, so the new class gets a real
+slot automatically.
+
+- **Students** — request a subject, give a reason, and withdraw a pending request.
+  They cannot request a subject they already take, or file a second pending
+  request for the same subject and term.
+- **Teachers** — see requests for the subjects they teach and decide on them.
+- **Admins** — see every request and can decide any of them.
+
+A teacher who does not teach that subject gets a 404 rather than a 403, so an
+unrelated teacher cannot even tell the request exists.
+
+## Messaging
+
+Students and teachers can hold a private conversation. One thread per student and
+teacher pair, optionally tagged with a subject.
+
+- Starting a conversation with someone you already have a thread with reuses it.
+- Only the two participants can read or post; unrelated teachers and admins are
+  excluded. Admins can list conversations for oversight but cannot post into them.
+- Unread counts are per participant, and reading a conversation clears them.
+
 ## Academic Terms
 
 Semester and school year are chosen from dropdowns, never typed. The options come
@@ -75,6 +101,8 @@ dashboard distribution rather than disappearing from it.
 - **Teachers** — accounts with subject and section assignments
 - **Grades** — scores 0–100, converted server-side to grade points
 - **Enrollments** — students enrolled in subjects and sections per term
+- **Subject requests** — students ask to add a subject; staff approve or reject
+- **Messaging** — private student-teacher conversations
 - **Schedules** — weekly timetable with automatic conflict-free generation
 - **Dashboard** — enrolment counts, average GWA, grade distribution, passing rate
 
