@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 /**
  * A dialog with macOS-style window controls.
@@ -26,7 +26,7 @@ export default function Modal({
   const close = typeof onClose === 'function' ? onClose : () => {}
   const cancel = typeof onCancel === 'function' ? onCancel : close
 
-  const save = () => {
+  const save = useCallback(() => {
     if (typeof onSave === 'function') {
       onSave()
       return
@@ -36,18 +36,25 @@ export default function Modal({
     if (form) {
       form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'))
     }
-  }
+  }, [onSave, formId])
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
         cancel()
+        return
+      }
+      // Ctrl/Cmd + Enter saves, so it never depends on hitting a small dot.
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!saving && !saveDisabled) save()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [cancel])
+  }, [cancel, save, saving, saveDisabled])
 
   return (
     <div className="modal-overlay" onClick={close}>
@@ -88,6 +95,14 @@ export default function Modal({
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
+        <div className="modal-hint">
+          <span className="modal-hint-item">red closes</span>
+          <span className="modal-hint-item">yellow cancels</span>
+          <span className="modal-hint-item">green saves</span>
+          <span className="modal-hint-item">
+            Esc cancels &middot; Ctrl/&#8984; + Enter saves
+          </span>
+        </div>
       </div>
     </div>
   )

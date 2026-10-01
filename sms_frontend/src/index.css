@@ -1053,47 +1053,78 @@ table {
   margin: 0;
 }
 
-/* macOS-style window controls: red closes, yellow cancels, green saves. */
+/* macOS-style window controls: red closes, yellow cancels, green saves.
+   Each dot is drawn as a 12px pseudo-element inside a 26px button, so the
+   control is comfortable to hit rather than a tiny target to aim at. */
+.modal-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-6) var(--space-3);
+  border-top: 1px solid var(--color-gray-100);
+  font-size: var(--font-xs);
+  color: var(--color-gray-400);
+}
+
+.modal-hint-item {
+  white-space: nowrap;
+}
+
 .modal-lights {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: none;
   border: none;
-  padding: 4px;
+  padding: 0;
   flex-shrink: 0;
 }
 
 .modal-light {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: block;
-  padding: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border: none;
+  border-radius: 6px;
+  background: none;
   cursor: pointer;
   transition: filter var(--transition-fast), opacity var(--transition-fast);
 }
 
+.modal-light::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--modal-light-color);
+}
+
 .modal-light-close {
-  background: #e0655f;
+  --modal-light-color: #e0655f;
 }
 
 .modal-light-min {
-  background: #d9a441;
+  --modal-light-color: #d9a441;
 }
 
 .modal-light-max {
-  background: #6faa62;
+  --modal-light-color: #6faa62;
 }
 
 .modal-light:hover:not(:disabled) {
   filter: brightness(1.08);
 }
 
+.modal-light:hover:not(:disabled)::before {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
 .modal-light:focus-visible {
   outline: 2px solid var(--color-red-500);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .modal-light:disabled {
@@ -1102,7 +1133,7 @@ table {
 }
 
 .modal-header-spacer {
-  width: 56px;
+  width: 26px;
   flex-shrink: 0;
 }
 
