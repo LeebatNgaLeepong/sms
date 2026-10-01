@@ -23,22 +23,9 @@ export default function ScheduleEntryModal({
     <Modal
       title={editSchedule ? 'Edit Schedule Entry' : 'Add Schedule Entry'}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose} type="button">
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onSave}
-            disabled={savingSchedule}
-            form="schedule-form"
-            type="submit"
-          >
-            {savingSchedule ? <span className="spinner" /> : editSchedule ? 'Update' : 'Create'}
-          </button>
-        </>
-      }
+      onCancel={onClose}
+      onSave={onSave}
+      saving={savingSchedule}
     >
       <form id="schedule-form" onSubmit={onSave}>
         <div className="form-row">

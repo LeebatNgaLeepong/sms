@@ -20,11 +20,9 @@ export default function SectionManagerModal({
     <Modal
       title={`Sections of ${subject.code}`}
       onClose={onClose}
-      footer={
-        <button className="btn btn-secondary" onClick={onClose} type="button">
-          Done
-        </button>
-      }
+      onCancel={onClose}
+      formId={isAdmin ? 'add-section-form' : undefined}
+      saving={savingSection}
     >
       <p className="form-hint" style={{ marginBottom: 'var(--space-4)' }}>
         A section is one class group of this subject. Each section meets at its own
@@ -104,14 +102,9 @@ export default function SectionManagerModal({
             </select>
           </div>
           <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={savingSection}
-              id="add-section-btn"
-            >
-              {savingSection ? <span className="spinner" /> : <IconPlus />} Add section
-            </button>
+            <span className="form-hint">
+              Fill in a code and press the green button to add a section.
+            </span>
           </div>
         </form>
       )}

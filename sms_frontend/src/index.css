@@ -1053,7 +1053,7 @@ table {
   margin: 0;
 }
 
-/* macOS-style window controls. Only the first dot closes; the rest are decoration. */
+/* macOS-style window controls: red closes, yellow cancels, green saves. */
 .modal-lights {
   display: inline-flex;
   align-items: center;
@@ -1061,8 +1061,6 @@ table {
   background: none;
   border: none;
   padding: 4px;
-  cursor: pointer;
-  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
@@ -1071,6 +1069,10 @@ table {
   height: 12px;
   border-radius: 50%;
   display: block;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: filter var(--transition-fast), opacity var(--transition-fast);
 }
 
 .modal-light-close {
@@ -1085,17 +1087,22 @@ table {
   background: #6faa62;
 }
 
-.modal-lights:hover .modal-light {
-  filter: brightness(1.06);
+.modal-light:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
-.modal-lights:focus-visible {
+.modal-light:focus-visible {
   outline: 2px solid var(--color-red-500);
   outline-offset: 2px;
 }
 
+.modal-light:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .modal-header-spacer {
-  width: 44px;
+  width: 56px;
   flex-shrink: 0;
 }
 

@@ -209,25 +209,12 @@ export default function StudentsPage() {
       {showModal && (
         <Modal
           title={editStudent ? 'Edit Student' : 'Add Student'}
-          onClose={() => setShowModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" type="button" onClick={() => setShowModal(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={saving}
-                form="student-form"
-                type="submit"
-              >
-                {saving ? <span className="spinner" /> : editStudent ? 'Update' : 'Create'}
-              </button>
-            </>
-          }
-        >
-          <form id="student-form" onSubmit={handleSave}>
+onClose={() => setShowModal(false)}
+      onCancel={() => setShowModal(false)}
+      onSave={handleSave}
+      saving={saving}
+    >
+      <form id="student-form" onSubmit={handleSave}>
             <div className="form-group">
               <label className="form-label" htmlFor="student-name">Full Name</label>
               <input

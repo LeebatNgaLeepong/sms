@@ -352,6 +352,9 @@ export default function StudentDetailPage() {
         <Modal
           title={`Manage Enrollment — ${data.student_name}`}
           onClose={() => setShowEnrollModal(false)}
+          onCancel={() => setShowEnrollModal(false)}
+          onSave={handleSaveEnrollment}
+          saving={savingEnrollment}
           footer={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <span style={{ fontSize: 'var(--font-sm)', color: 'var(--color-gray-600)' }}>
@@ -361,23 +364,7 @@ export default function StudentDetailPage() {
                   .reduce((sum, s) => sum + (s.units || 0), 0)}{' '}
                 units)
               </span>
-              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={() => setShowEnrollModal(false)}
-                  disabled={savingEnrollment}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSaveEnrollment}
-                  disabled={savingEnrollment}
-                >
-                  {savingEnrollment ? 'Saving...' : 'Save Enrollment'}
-                </button>
-              </div>
+              <span className="form-hint">Green saves, yellow cancels.</span>
             </div>
           }
         >

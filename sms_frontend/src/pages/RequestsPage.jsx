@@ -307,22 +307,10 @@ export default function EnrollmentRequestsPage() {
         <Modal
           title="Request a Subject"
           onClose={() => setShowModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" type="button" onClick={() => setShowModal(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                type="submit"
-                form="request-form"
-                disabled={saving}
-                id="send-request-btn"
-              >
-                {saving ? <span className="spinner" /> : 'Send request'}
-              </button>
-            </>
-          }
+          onCancel={() => setShowModal(false)}
+          onSave={handleSubmit}
+          saving={saving}
+          saveDisabled={!form.subject}
         >
           <form id="request-form" onSubmit={handleSubmit}>
             <div className="form-group">

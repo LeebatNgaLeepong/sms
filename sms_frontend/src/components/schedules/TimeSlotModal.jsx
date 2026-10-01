@@ -17,22 +17,9 @@ export default function TimeSlotModal({
     <Modal
       title={editSlot ? 'Edit Time Slot' : 'Add Time Slot'}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose} type="button">
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onSave}
-            disabled={savingSlot}
-            form="timeslot-form"
-            type="submit"
-          >
-            {savingSlot ? <span className="spinner" /> : editSlot ? 'Update' : 'Create'}
-          </button>
-        </>
-      }
+      onCancel={onClose}
+      onSave={onSave}
+      saving={savingSlot}
     >
       <form id="timeslot-form" onSubmit={onSave}>
         <div className="form-row">

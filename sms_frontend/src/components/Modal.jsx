@@ -1,26 +1,53 @@
 import { useEffect } from 'react'
 
 /**
- * A dialog with a macOS-style close control.
+ * A dialog with macOS-style window controls.
  *
- * The three dots are decorative except for the first, which closes the dialog.
- * Holding the close dot for a moment, or focusing it and pressing Enter or
- * Space, also closes, so the control is reachable without a pointer.
+ * The three dots carry the dialog's actions, so the footer no longer needs to
+ * repeat Cancel and Save:
+ *   red    closes the dialog
+ *   yellow cancels the same way as red, but is the cancel affordance
+ *   green  saves, by submitting the form the dialog contains
+ *
+ * Pass extra footer actions through `footer` for anything else, such as Delete.
  */
-export default function Modal({ title, children, onClose, footer }) {
+export default function Modal({
+  title,
+  children,
+  onClose,
+  onCancel,
+  onSave,
+  formId,
+  saving = false,
+  saveDisabled = false,
+  footer,
+}) {
   // onClose may be omitted by a caller; never let Escape throw.
   const close = typeof onClose === 'function' ? onClose : () => {}
+  const cancel = typeof onCancel === 'function' ? onCancel : close
+
+  const save = () => {
+    if (typeof onSave === 'function') {
+      onSave()
+      return
+    }
+    // No handler: submit the dialog's own form so HTML5 validation still applies.
+    const form = formId ? document.getElementById(formId) : null
+    if (form) {
+      form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit'))
+    }
+  }
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        close()
+        cancel()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [close])
+  }, [cancel])
 
   return (
     <div className="modal-overlay" onClick={close}>
@@ -32,17 +59,30 @@ export default function Modal({ title, children, onClose, footer }) {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
-          <button
-            type="button"
-            className="modal-lights"
-            onClick={close}
-            aria-label="Close dialog"
-            title="Close"
-          >
-            <span className="modal-light modal-light-close" />
-            <span className="modal-light modal-light-min" aria-hidden="true" />
-            <span className="modal-light modal-light-max" aria-hidden="true" />
-          </button>
+          <div className="modal-lights" role="group" aria-label="Dialog actions">
+            <button
+              type="button"
+              className="modal-light modal-light-close"
+              onClick={close}
+              aria-label="Close dialog"
+              title="Close"
+            />
+            <button
+              type="button"
+              className="modal-light modal-light-min"
+              onClick={cancel}
+              aria-label="Cancel"
+              title="Cancel"
+            />
+            <button
+              type="button"
+              className="modal-light modal-light-max"
+              onClick={save}
+              disabled={saving || saveDisabled}
+              aria-label="Save"
+              title={saveDisabled ? 'Nothing to save yet' : 'Save'}
+            />
+          </div>
           <h3 className="modal-title">{title}</h3>
           <span className="modal-header-spacer" aria-hidden="true" />
         </div>

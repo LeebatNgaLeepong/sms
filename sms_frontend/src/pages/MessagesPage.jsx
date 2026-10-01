@@ -414,23 +414,12 @@ export default function MessagesPage() {
       {showNew && (
         <Modal
           title={isStudent ? 'Message a teacher' : 'Message a student'}
-          onClose={() => setShowNew(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" type="button" onClick={() => setShowNew(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={startThread}
-                disabled={startingThread}
-                id="start-thread-btn"
-              >
-                {startingThread ? <span className="spinner" /> : 'Open conversation'}
-              </button>
-            </>
-          }
-        >
+onClose={() => setShowNew(false)}
+      onCancel={() => setShowNew(false)}
+      onSave={startThread}
+      saving={startingThread}
+      saveDisabled={!counterpartId}
+    >
           <div className="form-group">
             <label className="form-label" htmlFor="counterpart">
               {isStudent ? 'Teacher' : 'Student'}

@@ -125,22 +125,9 @@ export default function GradeFormModal({ show, grade, studentId, studentName, on
     <Modal
       title={grade ? `Edit Grade${studentName ? ` · ${studentName}` : ''}` : 'Record Grade'}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn-secondary" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            type="submit"
-            form="grade-form"
-            disabled={saving}
-            id="save-grade-btn"
-          >
-            {saving ? <span className="spinner" /> : grade ? 'Update' : 'Save'}
-          </button>
-        </>
-      }
+      onCancel={onClose}
+      onSave={handleSave}
+      saving={saving}
     >
       <form id="grade-form" onSubmit={handleSave}>
         {!grade && (

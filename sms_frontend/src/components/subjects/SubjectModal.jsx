@@ -16,22 +16,9 @@ export default function SubjectModal({
     <Modal
       title={editSubject ? 'Edit Subject' : 'Add Subject'}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose} type="button">
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onSave}
-            disabled={saving}
-            form="subject-form"
-            type="submit"
-          >
-            {saving ? <span className="spinner" /> : editSubject ? 'Update' : 'Create'}
-          </button>
-        </>
-      }
+      onCancel={onClose}
+      onSave={onSave}
+      saving={saving}
     >
       <form id="subject-form" onSubmit={onSave}>
         <div className="form-row">

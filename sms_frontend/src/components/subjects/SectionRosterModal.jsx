@@ -33,29 +33,19 @@ export default function SectionRosterModal({
     <Modal
       title={`Students in ${subject.code}`}
       onClose={onClose}
+      onCancel={onClose}
+      onSave={() => onEnrollmentChange(selectedStudentIds, false)}
+      saving={savingEnrollment}
+      saveDisabled={selectedStudentIds.length === 0}
       footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose} type="button">
-            Done
-          </button>
-          <button
-            className="btn btn-danger"
-            onClick={() => onEnrollmentChange(selectedStudentIds, true)}
-            disabled={savingEnrollment || selectedStudentIds.length === 0}
-            type="button"
-          >
-            {savingEnrollment ? <span className="spinner" /> : 'Remove selected'}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => onEnrollmentChange(selectedStudentIds, false)}
-            disabled={savingEnrollment || selectedStudentIds.length === 0}
-            type="button"
-            id="enroll-selected-students"
-          >
-            {savingEnrollment ? <span className="spinner" /> : 'Enroll selected'}
-          </button>
-        </>
+        <button
+          className="btn btn-danger"
+          onClick={() => onEnrollmentChange(selectedStudentIds, true)}
+          disabled={savingEnrollment || selectedStudentIds.length === 0}
+          type="button"
+        >
+          {savingEnrollment ? <span className="spinner" /> : 'Remove selected'}
+        </button>
       }
     >
       <div className="form-group">

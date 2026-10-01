@@ -168,14 +168,9 @@ export default function TeachersPage() {
         <Modal
           title={editTeacher ? 'Edit Teacher' : 'Add Teacher'}
           onClose={() => setShowModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" type="button" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving} form="teacher-form" type="submit">
-                {saving ? <span className="spinner" /> : editTeacher ? 'Update' : 'Create'}
-              </button>
-            </>
-          }
+          onCancel={() => setShowModal(false)}
+          onSave={handleSave}
+          saving={saving}
         >
           <form id="teacher-form" onSubmit={handleSave}>
             <div className="form-row">
