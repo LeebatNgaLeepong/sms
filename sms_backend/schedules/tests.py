@@ -175,6 +175,40 @@ class ScheduleGenerationTests(APITestCase):
         res = self.client.post(url, data)
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
+    def test_creating_a_duplicate_moves_the_existing_class(self):
+        """Posting a subject the student already has this term must not 400."""
+        self.client.force_authenticate(user=self.admin)
+        slot_one = TimeSlot.objects.create(
+            day='Wed', start_time=time(13, 0), end_time=time(15, 0), slot_type='lec'
+        )
+        url = reverse('schedule-list')
+        payload = {
+            'student': self.student.id,
+            'subject': self.subject1.id,
+            'time_slot': slot_one.id,
+            'semester': '1st Sem',
+            'school_year': '2025-2026',
+        }
+
+        first = self.client.post(url, payload, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        slot_two = TimeSlot.objects.create(
+            day='Thu', start_time=time(13, 0), end_time=time(15, 0), slot_type='lec'
+        )
+        second = self.client.post(
+            url, {**payload, 'time_slot': slot_two.id}, format='json'
+        )
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertTrue(second.data['moved'])
+
+        rows = StudentSchedule.objects.filter(
+            student=self.student, subject=self.subject1,
+            semester='1st Sem', school_year='2025-2026',
+        )
+        self.assertEqual(rows.count(), 1, 'must not create a second row')
+        self.assertEqual(rows.first().time_slot, slot_two)
+
     def test_schedule_list_is_ordered_chronologically(self):
         """Days must come back Mon..Sun, not alphabetically."""
         for day in ['Fri', 'Mon', 'Wed']:

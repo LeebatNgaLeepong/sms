@@ -988,9 +988,15 @@ table {
   color: var(--color-warning);
 }
 
+.badge-gp-5 {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
 .badge-gp-inc {
-  background: var(--color-gray-100);
+  background: var(--color-gray-200);
   color: var(--color-gray-600);
+  font-style: italic;
 }
 
 .badge-gp-fail {
@@ -1264,6 +1270,29 @@ table {
   font-size: var(--font-xs);
   color: var(--color-error);
   margin-top: var(--space-1);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--font-sm);
+  color: var(--color-gray-700);
+  cursor: pointer;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-red-500);
+  cursor: pointer;
+}
+
+.form-input:disabled {
+  background: var(--color-gray-100);
+  color: var(--color-gray-400);
+  cursor: not-allowed;
 }
 
 .form-hint {

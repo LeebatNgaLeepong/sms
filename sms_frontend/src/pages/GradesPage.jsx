@@ -12,7 +12,7 @@ export default function GradesPage() {
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editGrade, setEditGrade] = useState(null)
-  const [form, setForm] = useState({ student: '', subject: '', score: '' })
+  const [form, setForm] = useState({ student: '', subject: '', score: '', is_incomplete: false })
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
@@ -81,7 +81,7 @@ export default function GradesPage() {
 
   const openCreate = () => {
     setEditGrade(null)
-    setForm({ student: '', subject: '', score: '' })
+    setForm({ student: '', subject: '', score: '', is_incomplete: false })
     setShowModal(true)
   }
 
@@ -90,7 +90,8 @@ export default function GradesPage() {
     setForm({
       student: grade.student,
       subject: grade.subject,
-      score: grade.score,
+      score: grade.score ?? '',
+      is_incomplete: Boolean(grade.is_incomplete),
     })
     setShowModal(true)
   }
@@ -102,7 +103,8 @@ export default function GradesPage() {
       const payload = {
         student: form.student,
         subject: parseInt(form.subject),
-        score: form.score,
+        score: form.is_incomplete ? null : form.score,
+        is_incomplete: form.is_incomplete,
       }
       if (editGrade) {
         await api.put(`/grades/${editGrade.id}/`, payload)
@@ -351,7 +353,9 @@ export default function GradesPage() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label" htmlFor="grade-score">Score (0 - 100)</label>
+              <label className="form-label" htmlFor="grade-score">
+                Score (0 - 100)
+              </label>
               <input
                 id="grade-score"
                 className="form-input"
@@ -361,9 +365,31 @@ export default function GradesPage() {
                 step="0.01"
                 value={form.score}
                 onChange={(e) => setForm({ ...form, score: e.target.value })}
-                required
-                placeholder="e.g., 85.50"
+                disabled={form.is_incomplete}
+                required={!form.is_incomplete}
+                placeholder={form.is_incomplete ? 'Not applicable for INC' : 'e.g., 85.50'}
               />
+              <label className="checkbox-row" htmlFor="grade-incomplete">
+                <input
+                  id="grade-incomplete"
+                  type="checkbox"
+                  checked={form.is_incomplete}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      is_incomplete: e.target.checked,
+                      score: e.target.checked ? '' : form.score,
+                    })
+                  }
+                />
+                <span>
+                  Mark as <strong>INC</strong> (incomplete)
+                </span>
+              </label>
+              <p className="form-hint">
+                INC means the subject is not finished. It has no grade points and is left
+                out of GPA and GWA.
+              </p>
             </div>
           </form>
         </Modal>

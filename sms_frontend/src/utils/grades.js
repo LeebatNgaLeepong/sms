@@ -13,7 +13,7 @@ export const GRADE_POINT_ORDER = [
   '2.50',
   '2.75',
   '3.00',
-  '4.00',
+  'INC',
   '5.00',
 ]
 
@@ -27,7 +27,7 @@ export const GRADE_DESCRIPTIONS = {
   '2.50': 'Satisfactory (80-82)',
   '2.75': 'Needs Improvement (77-79)',
   '3.00': 'Passing (75-76)',
-  '4.00': 'Incomplete (INC)',
+  'INC': 'Incomplete (not counted)',
   '5.00': 'Failed (below 75)',
 }
 
@@ -40,8 +40,8 @@ const BADGE_BY_GRADE_POINT = {
   '2.25': 'badge-gp-3',
   '2.50': 'badge-gp-4',
   '2.75': 'badge-gp-4',
-  '3.00': 'badge-gp-3',
-  '4.00': 'badge-gp-inc',
+  '3.00': 'badge-gp-5',
+  'INC': 'badge-gp-inc',
   '5.00': 'badge-gp-fail',
 }
 
@@ -55,13 +55,18 @@ const COLOR_BY_GRADE_POINT = {
   '2.50': 'var(--color-warning)',
   '2.75': 'var(--color-warning)',
   '3.00': 'var(--color-warning)',
-  '4.00': 'var(--color-gray-500)',
+  'INC': 'var(--color-gray-500)',
   '5.00': 'var(--color-error)',
 }
 
 const normalize = (value) => {
   if (value === null || value === undefined) return ''
-  return Number.parseFloat(String(value)).toFixed(2)
+  const text = String(value).trim().toUpperCase()
+  // INC is a label, not a number, so it must not be run through toFixed().
+  if (text === 'INC' || text === 'I' || text === 'INCORRECT') return 'INC'
+  if (text === '') return ''
+  const num = Number.parseFloat(text)
+  return Number.isNaN(num) ? text : num.toFixed(2)
 }
 
 export const gradeBadgeClass = (value) => `badge ${BADGE_BY_GRADE_POINT[normalize(value)] || 'badge-gp-inc'}`

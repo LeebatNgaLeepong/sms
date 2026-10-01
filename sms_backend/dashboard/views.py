@@ -56,7 +56,7 @@ class DashboardSummaryView(APIView):
         distribution_dict = {
             '1.00': 0, '1.25': 0, '1.50': 0, '1.75': 0,
             '2.00': 0, '2.25': 0, '2.50': 0, '2.75': 0,
-            '3.00': 0, '5.00': 0,
+            '3.00': 0, 'INC': 0, '5.00': 0,
         }
         for item in distribution_counts:
             letter = item['letter']

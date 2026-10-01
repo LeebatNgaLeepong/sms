@@ -27,7 +27,14 @@ const DAYS = [
 const SLOT_TYPE_LABELS = { lec: 'Lecture', lab: 'Laboratory' }
 
 const emptySlotForm = { day: 'Mon', start_time: '07:00', end_time: '09:00', slot_type: 'lec', label: '' }
-const emptyScheduleForm = { student: '', subject: '', time_slot: '', semester: '', school_year: '' }
+const emptyScheduleForm = {
+  student: '',
+  subject: '',
+  section: '',
+  time_slot: '',
+  semester: '',
+  school_year: '',
+}
 
 const formatTime = (value) => {
   if (!value) return ''
@@ -83,6 +90,7 @@ export default function SchedulesPage() {
   const [timeSlots, setTimeSlots] = useState([])
   const [students, setStudents] = useState([])
   const [subjects, setSubjects] = useState([])
+  const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [studentFilter, setStudentFilter] = useState('')
@@ -100,14 +108,18 @@ export default function SchedulesPage() {
   const [savingSchedule, setSavingSchedule] = useState(false)
 
   const loadReferenceData = useCallback(async () => {
-    const requests = [api.get('/timeslots/', { params: { page_size: 500 } })]
+    const requests = [
+      api.get('/timeslots/', { params: { page_size: 500 } }),
+      api.get('/sections/', { params: { page_size: 500 } }),
+    ]
     if (isAdmin || isTeacher) {
       requests.push(api.get('/students/', { params: { page_size: 200 } }))
       requests.push(api.get('/subjects/', { params: { page_size: 200 } }))
     }
     try {
-      const [slotsRes, studentsRes, subjectsRes] = await Promise.all(requests)
+      const [slotsRes, sectionsRes, studentsRes, subjectsRes] = await Promise.all(requests)
       setTimeSlots(slotsRes.data.results || slotsRes.data || [])
+      setSections(sectionsRes.data.results || sectionsRes.data || [])
       if (studentsRes) setStudents(studentsRes.data.results || studentsRes.data || [])
       if (subjectsRes) setSubjects(subjectsRes.data.results || subjectsRes.data || [])
     } catch (err) {
@@ -234,11 +246,12 @@ export default function SchedulesPage() {
   const openEditSchedule = (item) => {
     setEditSchedule(item)
     setScheduleForm({
-      student: item.student,
+      student: item.student_id,
       subject: item.subject,
+      section: item.section || '',
       time_slot: item.time_slot,
-      semester: item.semester || '',
-      school_year: item.school_year || '',
+      semester: item.semester || term.semester,
+      school_year: item.school_year || term.school_year,
     })
     setShowScheduleModal(true)
   }
@@ -253,14 +266,19 @@ export default function SchedulesPage() {
       semester: scheduleForm.semester,
       school_year: scheduleForm.school_year,
     }
+    if (scheduleForm.section) payload.section = parseInt(scheduleForm.section, 10)
     try {
-      if (editSchedule) {
-        await api.put(`/schedules/${editSchedule.id}/`, payload)
-        addToast('Schedule entry updated', 'success')
-      } else {
-        await api.post('/schedules/', payload)
-        addToast('Schedule entry created', 'success')
-      }
+      const res = editSchedule
+        ? await api.put(`/schedules/${editSchedule.id}/`, payload)
+        : await api.post('/schedules/', payload)
+      addToast(
+        res.data?.moved
+          ? 'Already scheduled this subject — class time updated'
+          : editSchedule
+            ? 'Schedule entry updated'
+            : 'Schedule entry created',
+        'success'
+      )
       setShowScheduleModal(false)
       fetchSchedules()
     } catch (err) {
@@ -296,11 +314,14 @@ export default function SchedulesPage() {
         semester: term.semester,
         school_year: term.school_year,
       })
-      const scheduled = (res.data.results || []).reduce(
-        (sum, r) => sum + r.schedules.filter((s) => s.time_slot).length,
-        0
+      const classes = res.data?.classes_scheduled ?? 0
+      const groups = res.data?.subjects_scheduled ?? 0
+      addToast(
+        `Generated ${classes} class${classes !== 1 ? 'es' : ''} across ${groups} section${
+          groups !== 1 ? 's' : ''
+        } for ${res.data?.term || `${term.semester} ${term.school_year}`}`,
+        'success'
       )
-      addToast(`Schedules generated for ${targetIds.length} student(s) — ${scheduled} classes assigned`, 'success')
       fetchSchedules()
     } catch (err) {
       addToast(errorText(err, 'Failed to generate schedules'), 'error')
@@ -313,6 +334,10 @@ export default function SchedulesPage() {
   const todayKey = currentDayIndex === 0 ? 'Sun' : DAYS[currentDayIndex - 1].value
 
   const endTimeInvalid = isEndBeforeStart(slotForm.start_time, slotForm.end_time)
+
+  const subjectSections = sections.filter(
+    (s) => String(s.subject) === String(scheduleForm.subject)
+  )
 
   return (
     <div>
@@ -731,7 +756,9 @@ export default function SchedulesPage() {
                   id="schedule-subject"
                   className="form-select"
                   value={scheduleForm.subject}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, subject: e.target.value })}
+                  onChange={(e) =>
+                    setScheduleForm({ ...scheduleForm, subject: e.target.value, section: '' })
+                  }
                   required
                 >
                   <option value="">Select subject</option>
@@ -743,6 +770,28 @@ export default function SchedulesPage() {
                 </select>
               </div>
             </div>
+            {subjectSections.length > 0 && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="schedule-section">Section (optional)</label>
+                <select
+                  id="schedule-section"
+                  className="form-select"
+                  value={scheduleForm.section}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, section: e.target.value })}
+                >
+                  <option value="">No section</option>
+                  {subjectSections.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.subject_code}-{s.code} · {s.enrolled_count}/{s.capacity}
+                    </option>
+                  ))}
+                </select>
+                <p className="form-hint">
+                  If the student already has this subject this term, saving moves the class to
+                  the time you pick.
+                </p>
+              </div>
+            )}
             <TermFields
               idPrefix="schedule"
               semester={scheduleForm.semester}

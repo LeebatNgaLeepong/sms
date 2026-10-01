@@ -20,6 +20,98 @@ from subjects.models import Subject
 User = get_user_model()
 
 
+class IncompleteGradeTests(APITestCase):
+    """INC replaces the old 4.00 grade and is excluded from averages."""
+
+    def setUp(self):
+        self.student = Student.objects.create(
+            user=get_user_model().objects.create_user(
+                username='inc_user', email='inc_user@t.com', password='pw',
+                role=get_user_model().ROLE_STUDENT,
+            ),
+            name='INC Student',
+            email='inc_user@t.com',
+            program='BS CS',
+            year_level='1st Year',
+        )
+        self.subject = Subject.objects.create(code='INC101', name='Incomplete', units=3)
+        self.other = Subject.objects.create(code='INC102', name='Passed', units=3)
+        self.teacher = get_user_model().objects.create_user(
+            username='inc_teacher', email='inc_teacher@t.com', password='pw',
+            role=get_user_model().ROLE_TEACHER,
+        )
+        self.subject.instructor = self.teacher
+        self.subject.save()
+
+    def test_inc_grade_has_no_points(self):
+        grade = Grade.objects.create(
+            student=self.student, subject=self.subject,
+            is_incomplete=True, recorded_by=self.teacher,
+        )
+        self.assertEqual(grade.letter, 'INC')
+        self.assertIsNone(grade.grade_points)
+        self.assertIsNone(grade.score)
+
+    def test_inc_is_excluded_from_gpa_and_gwa(self):
+        Grade.objects.create(
+            student=self.student, subject=self.other, score=Decimal('99.00'),
+            recorded_by=self.teacher,
+        )
+        before_gpa, before_gwa = self.student.gpa, self.student.gwa
+
+        Grade.objects.create(
+            student=self.student, subject=self.subject,
+            is_incomplete=True, recorded_by=self.teacher,
+        )
+
+        self.assertEqual(self.student.gpa, before_gpa, 'INC must not move GPA')
+        self.assertEqual(self.student.gwa, before_gwa, 'INC must not move GWA')
+        self.assertEqual(self.student.units_earned, 3, 'INC units are not earned')
+        self.assertEqual(self.student.incomplete_count, 1)
+
+    def test_api_marks_grade_incomplete(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('grade-list'),
+            {'student': self.student.id, 'subject': self.subject.id, 'is_incomplete': True},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['letter'], 'INC')
+        self.assertIsNone(res.data['grade_points'])
+
+    def test_api_rejects_neither_score_nor_inc(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('grade-list'),
+            {'student': self.student.id, 'subject': self.subject.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('score', res.data)
+
+    def test_api_rejects_score_together_with_inc(self):
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.post(
+            reverse('grade-list'),
+            {
+                'student': self.student.id, 'subject': self.subject.id,
+                'score': '90.00', 'is_incomplete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('score', res.data)
+
+    def test_no_4_grade_point_is_ever_produced(self):
+        grade = Grade.objects.create(
+            student=self.student, subject=self.other, score=Decimal('75.00'),
+            recorded_by=self.teacher,
+        )
+        self.assertEqual(grade.letter, '3.00')
+        self.assertNotEqual(str(grade.grade_points), '4.00')
+
+
 class WeightedAverageTests(APITestCase):
     """GWA weights grade points by subject units; the simple GPA does not."""
 

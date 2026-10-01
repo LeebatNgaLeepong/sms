@@ -12,7 +12,7 @@ Grading Scale:
   2.50 = 80-82
   2.75 = 77-79
   3.00 = 75-76 (Passing)
-  4.00 = Incomplete (INC)
+  INC = Incomplete (no score yet, assigned by staff, excluded from averages)
   5.00 = below 75 (Fail)
 """
 
@@ -20,6 +20,10 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+# Marker for a subject that has not been completed yet. It is not a grade on the
+# 1.00-5.00 scale, so it carries no grade points and is left out of GPA and GWA.
+GRADE_INC = 'INC'
 
 
 def compute_grade_details(score: Decimal | float) -> tuple[str, Decimal]:
@@ -71,22 +75,30 @@ class Grade(models.Model):
     score = models.DecimalField(
         max_digits=5,
         decimal_places=2,
+        null=True,
+        blank=True,
         validators=[
             MinValueValidator(Decimal('0.00'), message="Score cannot be below 0."),
             MaxValueValidator(Decimal('100.00'), message="Score cannot exceed 100."),
         ],
-        help_text="Numerical score between 0.00 and 100.00.",
+        help_text="Numerical score between 0.00 and 100.00. Leave empty for INC.",
+    )
+    is_incomplete = models.BooleanField(
+        default=False,
+        help_text="Subject not completed yet. Recorded as INC with no grade points.",
     )
     letter = models.CharField(
         max_length=5,
         editable=False,
-        help_text="Auto-computed University of Antique grade (1.00, 1.25, ..., 5.00).",
+        help_text="Auto-computed grade (1.00, 1.25, ..., 5.00, or INC).",
     )
     grade_points = models.DecimalField(
         max_digits=3,
         decimal_places=2,
         editable=False,
-        help_text="Auto-computed grade points (1.00=best, 3.00=pass, 4.00=incomplete, 5.00=fail).",
+        null=True,
+        blank=True,
+        help_text="Auto-computed grade points (1.00=best, 3.00=pass, 5.00=fail). Empty for INC.",
     )
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -103,12 +115,31 @@ class Grade(models.Model):
         ordering = ['-updated_at']
         unique_together = ('student', 'subject')
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.is_incomplete:
+            if self.score is not None:
+                raise ValidationError({
+                    'score': 'An INC grade has no score. Clear the score first.',
+                })
+        elif self.score is None:
+            raise ValidationError({
+                'score': 'Enter a score, or mark the grade as INC.',
+            })
+
     def save(self, *args, **kwargs):
-        # Always derive letter and grade points server-side from score
-        letter, points = compute_grade_details(self.score)
-        self.letter = letter
-        self.grade_points = points
+        # Always derive letter and grade points server-side from score.
+        if self.is_incomplete:
+            self.letter = GRADE_INC
+            self.grade_points = None
+        else:
+            letter, points = compute_grade_details(self.score)
+            self.letter = letter
+            self.grade_points = points
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
+        if self.is_incomplete:
+            return f"{self.student.id} - {self.subject.code}: INC"
         return f"{self.student.id} - {self.subject.code}: {self.score} ({self.letter})"

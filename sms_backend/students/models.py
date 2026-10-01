@@ -84,11 +84,12 @@ class Student(models.Model):
     @property
     def gpa(self) -> float:
         """
-        Simple average of grade_points across all Grade records (rounded to 2 decimals).
+        Simple average of grade_points across all graded subjects.
         Uses University of Antique scale (1.00 = best, 5.00 = fail).
-        Returns 5.00 if student has no recorded grades (no subjects attempted).
+        INC grades carry no points and are excluded.
+        Returns 5.00 if the student has no graded subjects yet.
         """
-        grades = self.grades.all()
+        grades = self.grades.filter(grade_points__isnull=False)
         if not grades.exists():
             return 5.00
         avg_points = grades.aggregate(models.Avg('grade_points'))['grade_points__avg']
@@ -102,13 +103,14 @@ class Student(models.Model):
 
             GWA = sum(grade_points x units) / sum(units)
 
-        Returns 5.00 when the student has no recorded grades.
+        INC grades are excluded because the subject is not finished.
+        Returns 5.00 when the student has no graded subjects.
         """
         from decimal import Decimal
 
         total_units = 0
         weighted = Decimal('0')
-        for grade in self.grades.select_related('subject'):
+        for grade in self.grades.filter(grade_points__isnull=False).select_related('subject'):
             units = grade.subject.units or 0
             if units <= 0:
                 continue
@@ -121,11 +123,16 @@ class Student(models.Model):
 
     @property
     def units_earned(self) -> int:
-        """Total credit units across graded subjects."""
+        """Total credit units across graded subjects (INC excluded)."""
         return sum(
             (g.subject.units or 0)
-            for g in self.grades.select_related('subject')
+            for g in self.grades.filter(grade_points__isnull=False).select_related('subject')
         )
+
+    @property
+    def incomplete_count(self) -> int:
+        """How many of this student's subjects are still marked INC."""
+        return self.grades.filter(is_incomplete=True).count()
 
     def __str__(self) -> str:
         return f"{self.id} - {self.name}"

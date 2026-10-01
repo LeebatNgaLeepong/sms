@@ -184,6 +184,47 @@ class StudentScheduleViewSet(viewsets.ModelViewSet):
 
         return base
 
+    def create(self, request, *args, **kwargs):
+        """
+        POST /api/schedules/
+
+        A student holds at most one entry per subject per term, so posting a
+        subject they are already scheduled in moves that class to the new time
+        instead of failing the unique-together check.
+        """
+        data = request.data
+        try:
+            semester, school_year = resolve_term(data)
+        except InvalidTerm as exc:
+            return Response({exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = None
+        if data.get('student') and data.get('subject'):
+            existing = StudentSchedule.objects.filter(
+                student_id=data['student'],
+                subject_id=data['subject'],
+                semester=semester,
+                school_year=school_year,
+            ).first()
+
+        if existing is not None:
+            serializer = self.get_serializer(existing, data=data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(
+                {
+                    **serializer.data,
+                    'detail': 'Student already has this subject this term; its time was updated.',
+                    'moved': True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     @action(detail=False, methods=['post'], url_path='generate')
     def generate_all(self, request):
         """

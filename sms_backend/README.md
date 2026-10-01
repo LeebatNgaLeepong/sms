@@ -154,19 +154,32 @@ The API is available at `http://127.0.0.1:8000/`.
 
 ## 📊 Business Logic Specifications
 
-### Score to Letter Grade & Grade Points
-Computed **strictly on the server side** in `Grade.save()` and `GradeSerializer`:
-- **90.00 – 100.00** $\rightarrow$ **A** (4.00 Grade Points)
-- **80.00 – 89.99** $\rightarrow$ **B** (3.00 Grade Points)
-- **70.00 – 79.99** $\rightarrow$ **C** (2.00 Grade Points)
-- **60.00 – 69.99** $\rightarrow$ **D** (1.00 Grade Points)
-- **Below 60.00** $\rightarrow$ **F** (0.00 Grade Points)
+### Score to Grade & Grade Points
+Computed **strictly on the server side** in `Grade.save()` and `GradeSerializer`, using
+the University of Antique scale (lower is better):
+- **98.00 – 100.00** $\rightarrow$ **1.00** (Outstanding)
+- **95.00 – 97.99** $\rightarrow$ **1.25** (Excellent)
+- **92.00 – 94.99** $\rightarrow$ **1.50** (Very Good)
+- **89.00 – 91.99** $\rightarrow$ **1.75** (Good)
+- **86.00 – 88.99** $\rightarrow$ **2.00** (Fairly Good)
+- **83.00 – 85.99** $\rightarrow$ **2.25** (Fair)
+- **80.00 – 82.99** $\rightarrow$ **2.50** (Satisfactory)
+- **77.00 – 79.99** $\rightarrow$ **2.75** (Needs Improvement)
+- **75.00 – 76.99** $\rightarrow$ **3.00** (Passing)
+- **Below 75.00** $\rightarrow$ **5.00** (Failed)
+
+A subject not completed yet is recorded as **INC** (`is_incomplete=True`) instead of a
+score. INC carries no grade points and is excluded from GPA and GWA. A grade must have
+either a score or the INC flag; neither nor both is rejected.
 
 Scores $< 0$ or $> 100$ are rejected with `HTTP 400 Bad Request`.
 
-### Student GPA Calculation
-$$\text{GPA} = \frac{\sum \text{grade\_points}}{\text{total grades}}$$
-Rounded to 2 decimal places. Returns `0.00` if student has no recorded grades.
+### Student GPA and GWA
+$$\text{GPA} = \frac{\sum \text{grade\_points}}{\text{number of grades}}$$
+$$\text{GWA} = \frac{\sum (\text{grade\_points} \times \text{units})}{\sum \text{units}}$$
+Both rounded to 2 decimal places, both excluding INC grades, and both returning `5.00`
+if the student has no graded subjects. GWA is weighted by subject units and is the
+figure the university reports.
 
 ---
 
