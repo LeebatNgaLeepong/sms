@@ -1370,6 +1370,87 @@ table {
 }
 
 /* ============================================================
+   ERROR BOUNDARY SCREEN
+   Shown instead of a blank page when a render error occurs.
+   ============================================================ */
+.error-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--color-page);
+}
+
+.error-card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+
+.error-title {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-2);
+}
+
+.error-text {
+  color: var(--color-gray-600);
+  margin-bottom: var(--space-4);
+}
+
+.error-detail {
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.error-detail-label {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-gray-50);
+  border-bottom: 1px solid var(--color-gray-200);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-gray-500);
+}
+
+.error-detail-body {
+  margin: 0;
+  padding: var(--space-3);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  color: var(--color-gray-800);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.error-stack {
+  margin-top: var(--space-3);
+  font-size: var(--font-sm);
+  color: var(--color-gray-600);
+}
+
+.error-stack summary {
+  cursor: pointer;
+  margin-bottom: var(--space-2);
+}
+
+.error-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  flex-wrap: wrap;
+}
+
+/* ============================================================
    SUBJECT ENROLLMENT PICKER
    ============================================================ */
 .student-picker {
