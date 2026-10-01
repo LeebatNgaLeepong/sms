@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import Modal from '../components/Modal'
 import { IconSearch, IconPlus, IconEdit, IconTrash, IconStudents } from '../components/Icons'
+import SubjectModal from '../components/subjects/SubjectModal'
+import SectionManagerModal from '../components/subjects/SectionManagerModal'
+import SectionRosterModal from '../components/subjects/SectionRosterModal'
 
 export default function SubjectsPage() {
   const [subjects, setSubjects] = useState([])
@@ -24,13 +26,14 @@ export default function SubjectsPage() {
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [enrolledCounts, setEnrolledCounts] = useState({})
   const [savingEnrollment, setSavingEnrollment] = useState(false)
-  const [studentSearch, setStudentSearch] = useState('')
+
   const [showSectionModal, setShowSectionModal] = useState(false)
   const [sectionSubject, setSectionSubject] = useState(null)
   const [sections, setSections] = useState([])
   const [sectionCounts, setSectionCounts] = useState({})
   const [sectionForm, setSectionForm] = useState({ code: '', capacity: 40, instructor: '' })
   const [savingSection, setSavingSection] = useState(false)
+
   const { isAdmin } = useAuth()
   const { addToast } = useToast()
 
@@ -78,7 +81,6 @@ export default function SubjectsPage() {
     }
   }
 
-  // The list endpoint does not include enrollment or section counts, so fetch them.
   const loadEnrolledCounts = async (list) => {
     if (!isAdmin) return
     const entries = await Promise.all(
@@ -265,25 +267,11 @@ export default function SubjectsPage() {
 
   const totalPages = Math.ceil(totalCount / 10)
 
-  const enrolledIdSet = new Set(enrolledStudents.map((s) => s.id))
-  const alreadyEnrolled = (id) => enrolledIdSet.has(id)
-  const searchTerm = studentSearch.trim().toLowerCase()
-  const candidates = allStudents.filter((s) => {
-    if (!searchTerm) return true
-    return (
-      s.name.toLowerCase().includes(searchTerm) ||
-      String(s.id).toLowerCase().includes(searchTerm) ||
-      (s.program || '').toLowerCase().includes(searchTerm)
-    )
-  })
-
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">
-            Subjects
-          </h1>
+          <h1 className="page-title">Subjects</h1>
           <p className="page-subtitle">
             {totalCount} subject{totalCount !== 1 ? 's' : ''} available
           </p>
@@ -388,280 +376,43 @@ export default function SubjectsPage() {
         )}
       </div>
 
-      {showModal && (
-        <Modal
-          title={editSubject ? 'Edit Subject' : 'Add Subject'}
-          onClose={() => setShowModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving} form="subject-form" type="submit">
-                {saving ? <span className="spinner" /> : editSubject ? 'Update' : 'Create'}
-              </button>
-            </>
-          }
-        >
-          <form id="subject-form" onSubmit={handleSave}>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label" htmlFor="subject-code">Course Code</label>
-                <input
-                  id="subject-code"
-                  className="form-input"
-                  value={form.code}
-                  onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  required
-                  placeholder="e.g., CS101"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="subject-units">Units</label>
-                <input
-                  id="subject-units"
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  max="12"
-                  value={form.units}
-                  onChange={(e) => setForm({ ...form, units: parseInt(e.target.value) || 1 })}
-                  required
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="subject-name">Subject Name</label>
-              <input
-                id="subject-name"
-                className="form-input"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-                placeholder="e.g., Introduction to Programming"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="subject-instructor">Assigned Instructor</label>
-              <select
-                id="subject-instructor"
-                className="form-select"
-                value={form.instructor || ''}
-                onChange={(e) => setForm({ ...form, instructor: e.target.value ? parseInt(e.target.value) : '' })}
-              >
-                <option value="">No Instructor Assigned</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.first_name ? `${t.first_name} ${t.last_name}` : t.username} ({t.username})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </form>
-        </Modal>
-      )}
+      <SubjectModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        editSubject={editSubject}
+        form={form}
+        setForm={setForm}
+        teachers={teachers}
+        onSave={handleSave}
+        saving={saving}
+      />
 
-      {showSectionModal && sectionSubject && (
-        <Modal
-          title={`Sections of ${sectionSubject.code}`}
-          onClose={() => setShowSectionModal(false)}
-          footer={
-            <button className="btn btn-secondary" onClick={() => setShowSectionModal(false)}>
-              Done
-            </button>
-          }
-        >
-          <p className="form-hint" style={{ marginBottom: 'var(--space-4)' }}>
-            A section is one class group of this subject. Each section meets at its own
-            time, so you can run several at once.
-          </p>
+      <SectionManagerModal
+        isOpen={showSectionModal}
+        onClose={() => setShowSectionModal(false)}
+        subject={sectionSubject}
+        sections={sections}
+        sectionForm={sectionForm}
+        setSectionForm={setSectionForm}
+        teachers={teachers}
+        isAdmin={isAdmin}
+        onAddSection={handleAddSection}
+        onDeleteSection={handleDeleteSection}
+        savingSection={savingSection}
+      />
 
-          <div className="chip-list" style={{ marginBottom: 'var(--space-4)' }}>
-            {sections.length === 0 ? (
-              <span style={{ color: 'var(--color-gray-500)', fontSize: 'var(--font-sm)' }}>
-                No sections yet.
-              </span>
-            ) : (
-              sections.map((s) => (
-                <span key={s.id} className="chip">
-                  {sectionSubject.code}-{s.code} · {s.enrolled_count}/{s.capacity}
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      className="chip-remove"
-                      title={`Delete section ${s.code}`}
-                      onClick={() => handleDeleteSection(s)}
-                    >
-                      &times;
-                    </button>
-                  )}
-                </span>
-              ))
-            )}
-          </div>
-
-          {isAdmin && (
-            <form onSubmit={handleAddSection} className="form-row" id="add-section-form">
-              <div className="form-group">
-                <label className="form-label" htmlFor="section-code">
-                  New section code
-                </label>
-                <input
-                  id="section-code"
-                  className="form-input"
-                  value={sectionForm.code}
-                  onChange={(e) => setSectionForm({ ...sectionForm, code: e.target.value })}
-                  placeholder="A"
-                  maxLength={20}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="section-capacity">
-                  Capacity
-                </label>
-                <input
-                  id="section-capacity"
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  max="500"
-                  value={sectionForm.capacity}
-                  onChange={(e) => setSectionForm({ ...sectionForm, capacity: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="section-instructor">
-                  Instructor
-                </label>
-                <select
-                  id="section-instructor"
-                  className="form-select"
-                  value={sectionForm.instructor}
-                  onChange={(e) => setSectionForm({ ...sectionForm, instructor: e.target.value })}
-                >
-                  <option value="">Unassigned</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.first_name ? `${t.first_name} ${t.last_name}` : t.username}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-                <button
-                  className="btn btn-primary"
-                  type="submit"
-                  disabled={savingSection}
-                  id="add-section-btn"
-                >
-                  {savingSection ? <span className="spinner" /> : <IconPlus />} Add section
-                </button>
-              </div>
-            </form>
-          )}
-        </Modal>
-      )}
-
-      {showEnrollModal && enrollSubject && (
-        <Modal
-          title={`Students in ${enrollSubject.code}`}
-          onClose={() => setShowEnrollModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" onClick={() => setShowEnrollModal(false)}>
-                Done
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => handleEnrollmentChange(selectedStudentIds, true)}
-                disabled={savingEnrollment || selectedStudentIds.length === 0}
-                type="button"
-              >
-                {savingEnrollment ? <span className="spinner" /> : 'Remove selected'}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => handleEnrollmentChange(selectedStudentIds, false)}
-                disabled={savingEnrollment || selectedStudentIds.length === 0}
-                type="button"
-                id="enroll-selected-students"
-              >
-                {savingEnrollment ? <span className="spinner" /> : 'Enroll selected'}
-              </button>
-            </>
-          }
-        >
-          <div className="form-group">
-            <label className="form-label" htmlFor="student-search">
-              Add students to {enrollSubject.code}
-            </label>
-            <input
-              id="student-search"
-              className="form-input"
-              type="text"
-              placeholder="Search by name, ID, or program..."
-              value={studentSearch}
-              onChange={(e) => setStudentSearch(e.target.value)}
-            />
-            <p className="form-hint">
-              Tick any number of students, then choose Enroll or Remove. Everyone in this
-              subject shares one class time.
-            </p>
-          </div>
-
-          <div className="student-picker" id="subject-student-picker">
-            {candidates.length === 0 ? (
-              <div className="table-empty">No students match.</div>
-            ) : (
-              candidates.map((s) => (
-                <label key={s.id} className="student-picker-row">
-                  <input
-                    type="checkbox"
-                    checked={selectedStudentIds.includes(s.id)}
-                    onChange={() => toggleStudent(s.id)}
-                  />
-                  <span>
-                    <span style={{ fontWeight: 500, color: 'var(--color-gray-900)' }}>{s.name}</span>
-                    <span style={{ color: 'var(--color-gray-500)' }}>
-                      {' '}
-                      &middot; {s.id} &middot; {s.program}
-                    </span>
-                  </span>
-                  {alreadyEnrolled(s.id) && <span className="badge badge-student">Enrolled</span>}
-                </label>
-              ))
-            )}
-          </div>
-
-          <div className="form-group" style={{ marginTop: 'var(--space-5)' }}>
-            <label className="form-label">
-              Currently enrolled ({enrolledStudents.length})
-            </label>
-            {enrolledStudents.length === 0 ? (
-              <div style={{ color: 'var(--color-gray-500)', fontSize: 'var(--font-sm)' }}>
-                No students enrolled yet.
-              </div>
-            ) : (
-              <div className="chip-list">
-                {enrolledStudents.map((s) => (
-                  <span key={s.id} className="chip">
-                    {s.name}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        className="chip-remove"
-                        title={`Remove ${s.name}`}
-                        onClick={() => handleEnrollmentChange([s.id], true)}
-                      >
-                        &times;
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
+      <SectionRosterModal
+        isOpen={showEnrollModal}
+        onClose={() => setShowEnrollModal(false)}
+        subject={enrollSubject}
+        enrolledStudents={enrolledStudents}
+        allStudents={allStudents}
+        selectedStudentIds={selectedStudentIds}
+        onToggleStudent={toggleStudent}
+        onEnrollmentChange={handleEnrollmentChange}
+        savingEnrollment={savingEnrollment}
+        isAdmin={isAdmin}
+      />
     </div>
   )
 }

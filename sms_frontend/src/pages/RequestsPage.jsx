@@ -309,7 +309,7 @@ export default function EnrollmentRequestsPage() {
           onClose={() => setShowModal(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>
+              <button className="btn btn-secondary" type="button" onClick={() => setShowModal(false)}>
                 Cancel
               </button>
               <button

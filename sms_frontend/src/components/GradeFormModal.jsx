@@ -117,13 +117,17 @@ export default function GradeFormModal({ show, grade, studentId, studentName, on
     }
   }
 
+  // All hooks above must run every render, so the guard sits here rather than at
+  // the top. Without it the dialog never goes away and Cancel appears inert.
+  if (!show) return null
+
   return (
     <Modal
       title={grade ? `Edit Grade${studentName ? ` · ${studentName}` : ''}` : 'Record Grade'}
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>
+          <button className="btn btn-secondary" type="button" onClick={onClose}>
             Cancel
           </button>
           <button

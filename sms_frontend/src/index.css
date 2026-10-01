@@ -1048,6 +1048,55 @@ table {
   font-size: var(--font-md);
   font-weight: 600;
   color: var(--color-gray-900);
+  text-align: center;
+  flex: 1;
+  margin: 0;
+}
+
+/* macOS-style window controls. Only the first dot closes; the rest are decoration. */
+.modal-lights {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.modal-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: block;
+}
+
+.modal-light-close {
+  background: #e0655f;
+}
+
+.modal-light-min {
+  background: #d9a441;
+}
+
+.modal-light-max {
+  background: #6faa62;
+}
+
+.modal-lights:hover .modal-light {
+  filter: brightness(1.06);
+}
+
+.modal-lights:focus-visible {
+  outline: 2px solid var(--color-red-500);
+  outline-offset: 2px;
+}
+
+.modal-header-spacer {
+  width: 44px;
+  flex-shrink: 0;
 }
 
 .modal-body {

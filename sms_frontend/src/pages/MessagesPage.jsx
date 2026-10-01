@@ -417,7 +417,7 @@ export default function MessagesPage() {
           onClose={() => setShowNew(false)}
           footer={
             <>
-              <button className="btn btn-secondary" onClick={() => setShowNew(false)}>
+              <button className="btn btn-secondary" type="button" onClick={() => setShowNew(false)}>
                 Cancel
               </button>
               <button

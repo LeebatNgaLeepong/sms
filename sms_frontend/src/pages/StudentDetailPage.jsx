@@ -364,6 +364,7 @@ export default function StudentDetailPage() {
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                 <button
                   className="btn btn-secondary"
+                  type="button"
                   onClick={() => setShowEnrollModal(false)}
                   disabled={savingEnrollment}
                 >

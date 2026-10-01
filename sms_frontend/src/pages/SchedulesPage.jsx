@@ -2,17 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import api from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import Modal from '../components/Modal'
-import TermFields from '../components/TermFields'
 import useTerms from '../hooks/useTerms'
 import {
   IconSearch,
   IconPlus,
-  IconEdit,
-  IconTrash,
   IconCalendar,
   IconRefresh,
 } from '../components/Icons'
+import ScheduleWeeklyGrid from '../components/schedules/ScheduleWeeklyGrid'
+import ScheduleListView from '../components/schedules/ScheduleListView'
+import TimeSlotManager from '../components/schedules/TimeSlotManager'
+import TimeSlotModal from '../components/schedules/TimeSlotModal'
+import ScheduleEntryModal from '../components/schedules/ScheduleEntryModal'
 
 const DAYS = [
   { value: 'Mon', label: 'Mon', full: 'Monday' },
@@ -85,7 +86,6 @@ export default function SchedulesPage() {
   const { current, semesters, school_years: schoolYears } = useTerms()
 
   const [term, setTerm] = useState(current)
-
   const [schedules, setSchedules] = useState([])
   const [timeSlots, setTimeSlots] = useState([])
   const [students, setStudents] = useState([])
@@ -332,9 +332,7 @@ export default function SchedulesPage() {
 
   const currentDayIndex = new Date().getDay()
   const todayKey = currentDayIndex === 0 ? 'Sun' : DAYS[currentDayIndex - 1].value
-
   const endTimeInvalid = isEndBeforeStart(slotForm.start_time, slotForm.end_time)
-
   const subjectSections = sections.filter(
     (s) => String(s.subject) === String(scheduleForm.subject)
   )
@@ -440,388 +438,69 @@ export default function SchedulesPage() {
             <div className="spinner spinner-lg" />
           </div>
         ) : showGrid ? (
-          slotRows.length === 0 ? (
-            <div className="table-empty">No time slots available to build a timetable.</div>
-          ) : (
-            <div className="timetable-wrap">
-              <table className="timetable" id="schedule-timetable">
-                <thead>
-                  <tr>
-                    <th className="timetable-time-col">Time</th>
-                    {DAYS.map((d) => (
-                      <th key={d.value} className={d.value === todayKey ? 'timetable-today' : ''}>
-                        {d.full}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {slotRows.map((row) => (
-                    <tr key={row.startTime}>
-                      <td className="timetable-time-col">
-                        {formatTime(row.startTime)}
-                        <div style={{ fontSize: 'var(--font-xs)', color: 'var(--color-gray-400)' }}>
-                          {row.slots
-                            .map((s) => formatDuration(String(s.start_time).slice(0, 5), String(s.end_time).slice(0, 5)))
-                            .filter((v, i, a) => a.indexOf(v) === i)
-                            .join(' / ')}
-                        </div>
-                      </td>
-                      {DAYS.map((day) => {
-                        const cellKey = `${day.value}-${row.startTime}`
-                        const items = schedulesByCell[cellKey] || []
-                        const isToday = day.value === todayKey
-                        return (
-                          <td key={day.value} className={isToday ? 'timetable-today' : ''}>
-                            {items.length === 0 ? (
-                              <span className="timetable-empty">&mdash;</span>
-                            ) : (
-                              items.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className={`timetable-card ${item.slot_type === 'lab' ? 'lab' : 'lec'}`}
-                                >
-                                  <div className="timetable-card-code">{item.subject_code}</div>
-                                  <div className="timetable-card-name">{item.subject_name}</div>
-                                  <div className="timetable-card-meta">
-                                    {formatTime(item.start_time)} &ndash; {formatTime(item.end_time)}
-                                    {item.slot_type === 'lab' ? ' Lab' : ''}
-                                  </div>
-                                  {!isStudent && (
-                                    <div className="timetable-card-meta">{item.student_name}</div>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        ) : schedules.length === 0 ? (
-          <div className="table-empty">No schedule entries found.</div>
+          <ScheduleWeeklyGrid
+            slotRows={slotRows}
+            schedulesByCell={schedulesByCell}
+            todayKey={todayKey}
+            DAYS={DAYS}
+            isStudent={isStudent}
+            formatTime={formatTime}
+            formatDuration={formatDuration}
+          />
         ) : (
-          <table className="data-table" id="schedules-table">
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Time</th>
-                {!isStudent && <th>Student</th>}
-                <th>Subject</th>
-                <th>Type</th>
-                <th>Semester</th>
-                {isAdmin && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.map((item) => (
-                <tr key={item.id}>
-                  <td style={{ fontWeight: 500 }}>
-                    {DAYS.find((d) => d.value === item.day)?.full || item.day}
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    {formatTime(item.start_time)} &ndash; {formatTime(item.end_time)}
-                  </td>
-                  {!isStudent && <td>{item.student_name}</td>}
-                  <td>
-                    <div style={{ fontWeight: 500, color: 'var(--color-gray-900)' }}>{item.subject_code}</div>
-                    <div style={{ color: 'var(--color-gray-500)' }}>{item.subject_name}</div>
-                  </td>
-                  <td>
-                    <span className={`badge ${item.slot_type === 'lab' ? 'badge-lab' : 'badge-lec'}`}>
-                      {SLOT_TYPE_LABELS[item.slot_type] || item.slot_type}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--color-gray-600)' }}>
-                    {item.semester || '—'}
-                    {item.school_year ? ` · ${item.school_year}` : ''}
-                  </td>
-                  {isAdmin && (
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn-icon btn-ghost" title="Edit" onClick={() => openEditSchedule(item)}>
-                          <IconEdit />
-                        </button>
-                        <button className="btn-icon btn-ghost" title="Remove" onClick={() => handleDeleteSchedule(item)}>
-                          <IconTrash />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ScheduleListView
+            schedules={schedules}
+            DAYS={DAYS}
+            isStudent={isStudent}
+            isAdmin={isAdmin}
+            formatTime={formatTime}
+            SLOT_TYPE_LABELS={SLOT_TYPE_LABELS}
+            onEdit={openEditSchedule}
+            onDelete={handleDeleteSchedule}
+          />
         )}
       </div>
 
       {isAdmin && (
-        <div className="table-container">
-          <div className="table-toolbar">
-            <h3 style={{ fontSize: 'var(--font-base)', fontWeight: 600, color: 'var(--color-gray-800)' }}>
-              Time Slots ({timeSlots.length})
-            </h3>
-            <button className="btn btn-secondary btn-sm" onClick={openCreateSlot} id="add-timeslot-btn">
-              <IconPlus /> Add Time Slot
-            </button>
-          </div>
-
-          {timeSlots.length === 0 ? (
-            <div className="table-empty">No time slots defined.</div>
-          ) : (
-            <table className="data-table" id="timeslots-table">
-              <thead>
-                <tr>
-                  <th>Day</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Duration</th>
-                  <th>Type</th>
-                  <th>Label</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timeSlots.map((slot) => (
-                  <tr key={slot.id}>
-                    <td style={{ fontWeight: 500 }}>
-                      {DAYS.find((d) => d.value === slot.day)?.full || slot.day}
-                    </td>
-                    <td>{formatTime(slot.start_time)}</td>
-                    <td>{formatTime(slot.end_time)}</td>
-                    <td>{slot.duration_hours}h</td>
-                    <td>
-                      <span className={`badge ${slot.slot_type === 'lab' ? 'badge-lab' : 'badge-lec'}`}>
-                        {SLOT_TYPE_LABELS[slot.slot_type] || slot.slot_type}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--color-gray-500)' }}>{slot.label || '—'}</td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn-icon btn-ghost" title="Edit" onClick={() => openEditSlot(slot)}>
-                          <IconEdit />
-                        </button>
-                        <button className="btn-icon btn-ghost" title="Delete" onClick={() => handleDeleteSlot(slot)}>
-                          <IconTrash />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <TimeSlotManager
+          timeSlots={timeSlots}
+          DAYS={DAYS}
+          SLOT_TYPE_LABELS={SLOT_TYPE_LABELS}
+          formatTime={formatTime}
+          onAddSlot={openCreateSlot}
+          onEditSlot={openEditSlot}
+          onDeleteSlot={handleDeleteSlot}
+        />
       )}
 
-      {showSlotModal && (
-        <Modal
-          title={editSlot ? 'Edit Time Slot' : 'Add Time Slot'}
-          onClose={() => setShowSlotModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" onClick={() => setShowSlotModal(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSaveSlot}
-                disabled={savingSlot}
-                form="timeslot-form"
-                type="submit"
-              >
-                {savingSlot ? <span className="spinner" /> : editSlot ? 'Update' : 'Create'}
-              </button>
-            </>
-          }
-        >
-          <form id="timeslot-form" onSubmit={handleSaveSlot}>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label" htmlFor="slot-day">Day</label>
-                <select
-                  id="slot-day"
-                  className="form-select"
-                  value={slotForm.day}
-                  onChange={(e) => setSlotForm({ ...slotForm, day: e.target.value })}
-                >
-                  {DAYS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.full}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="slot-start">Start Time</label>
-                <input
-                  id="slot-start"
-                  className="form-input"
-                  type="time"
-                  value={slotForm.start_time}
-                  onChange={(e) => setSlotForm({ ...slotForm, start_time: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label" htmlFor="slot-end">End Time</label>
-                <input
-                  id="slot-end"
-                  className={`form-input${endTimeInvalid ? ' error' : ''}`}
-                  type="time"
-                  value={slotForm.end_time}
-                  onChange={(e) => setSlotForm({ ...slotForm, end_time: e.target.value })}
-                  required
-                />
-                {endTimeInvalid && (
-                  <div className="form-error">End time must be after the start time.</div>
-                )}
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="slot-type">Type</label>
-                <select
-                  id="slot-type"
-                  className="form-select"
-                  value={slotForm.slot_type}
-                  onChange={(e) => setSlotForm({ ...slotForm, slot_type: e.target.value })}
-                >
-                  <option value="lec">Lecture</option>
-                  <option value="lab">Laboratory</option>
-                </select>
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="slot-label">Label (optional)</label>
-              <input
-                id="slot-label"
-                className="form-input"
-                value={slotForm.label}
-                onChange={(e) => setSlotForm({ ...slotForm, label: e.target.value })}
-                placeholder="e.g., Period 1"
-              />
-            </div>
-          </form>
-        </Modal>
-      )}
+      <TimeSlotModal
+        isOpen={showSlotModal}
+        onClose={() => setShowSlotModal(false)}
+        editSlot={editSlot}
+        slotForm={slotForm}
+        setSlotForm={setSlotForm}
+        onSave={handleSaveSlot}
+        savingSlot={savingSlot}
+        DAYS={DAYS}
+        endTimeInvalid={endTimeInvalid}
+      />
 
-      {showScheduleModal && (
-        <Modal
-          title={editSchedule ? 'Edit Schedule Entry' : 'Add Schedule Entry'}
-          onClose={() => setShowScheduleModal(false)}
-          footer={
-            <>
-              <button className="btn btn-secondary" onClick={() => setShowScheduleModal(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSaveSchedule}
-                disabled={savingSchedule}
-                form="schedule-form"
-                type="submit"
-              >
-                {savingSchedule ? <span className="spinner" /> : editSchedule ? 'Update' : 'Create'}
-              </button>
-            </>
-          }
-        >
-          <form id="schedule-form" onSubmit={handleSaveSchedule}>
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label" htmlFor="schedule-student">Student</label>
-                <select
-                  id="schedule-student"
-                  className="form-select"
-                  value={scheduleForm.student}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, student: e.target.value })}
-                  required
-                >
-                  <option value="">Select student</option>
-                  {students.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="schedule-subject">Subject</label>
-                <select
-                  id="schedule-subject"
-                  className="form-select"
-                  value={scheduleForm.subject}
-                  onChange={(e) =>
-                    setScheduleForm({ ...scheduleForm, subject: e.target.value, section: '' })
-                  }
-                  required
-                >
-                  <option value="">Select subject</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.code} &middot; {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {subjectSections.length > 0 && (
-              <div className="form-group">
-                <label className="form-label" htmlFor="schedule-section">Section (optional)</label>
-                <select
-                  id="schedule-section"
-                  className="form-select"
-                  value={scheduleForm.section}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, section: e.target.value })}
-                >
-                  <option value="">No section</option>
-                  {subjectSections.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.subject_code}-{s.code} · {s.enrolled_count}/{s.capacity}
-                    </option>
-                  ))}
-                </select>
-                <p className="form-hint">
-                  If the student already has this subject this term, saving moves the class to
-                  the time you pick.
-                </p>
-              </div>
-            )}
-            <TermFields
-              idPrefix="schedule"
-              semester={scheduleForm.semester}
-              schoolYear={scheduleForm.school_year}
-              onChange={({ semester, schoolYear }) =>
-                setScheduleForm((f) => ({ ...f, semester, school_year: schoolYear }))
-              }
-            />
-            <div className="form-group">
-              <label className="form-label" htmlFor="schedule-slot">Time Slot</label>
-              <select
-                id="schedule-slot"
-                className="form-select"
-                value={scheduleForm.time_slot}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, time_slot: e.target.value })}
-                required
-              >
-                <option value="">Select time slot</option>
-                {timeSlots.map((slot) => (
-                  <option key={slot.id} value={slot.id}>
-                    {DAYS.find((d) => d.value === slot.day)?.full} {formatTime(slot.start_time)}
-                    {' – '}
-                    {formatTime(slot.end_time)} &middot; {SLOT_TYPE_LABELS[slot.slot_type]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </form>
-        </Modal>
-      )}
+      <ScheduleEntryModal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        editSchedule={editSchedule}
+        scheduleForm={scheduleForm}
+        setScheduleForm={setScheduleForm}
+        onSave={handleSaveSchedule}
+        savingSchedule={savingSchedule}
+        students={students}
+        subjects={subjects}
+        subjectSections={subjectSections}
+        timeSlots={timeSlots}
+        DAYS={DAYS}
+        formatTime={formatTime}
+        SLOT_TYPE_LABELS={SLOT_TYPE_LABELS}
+      />
     </div>
   )
 }

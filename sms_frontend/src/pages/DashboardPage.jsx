@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const { user } = useAuth()
+  const { bands, passingPoints, bandForPoints } = useGradeScale()
 
   useEffect(() => {
     fetchDashboard()
@@ -31,6 +32,21 @@ export default function DashboardPage() {
     }
   }
 
+  const distribution = data?.grade_distribution || {}
+
+  // Scale bands first, then any grade actually recorded that the scale does not
+  // define (for example a manually entered 4.00).
+  const gradeOrder = useMemo(() => {
+    const base = bands.length ? bands.map((b) => b.letter) : GRADE_POINT_ORDER
+    const extra = Object.keys(distribution).filter((k) => !base.includes(k))
+    const rank = (k) => {
+      const band = bands.find((b) => b.letter === k)
+      return band ? Number(band.points) : 99
+    }
+    return [...base, ...extra].sort((a, b) => rank(a) - rank(b))
+  }, [bands, distribution])
+  const maxGrade = Math.max(...gradeOrder.map((key) => distribution[key] || 0), 1)
+
   if (loading) {
     return (
       <div className="loading-page">
@@ -43,21 +59,6 @@ export default function DashboardPage() {
   if (!data) {
     return <div className="loading-page">Failed to load dashboard data.</div>
   }
-
-  const distribution = data.grade_distribution || {}
-  const { bands, passingPoints, bandForPoints } = useGradeScale()
-  // Scale bands first, then any grade actually recorded that the scale does not
-// define (for example a manually entered 4.00).
-  const gradeOrder = useMemo(() => {
-    const base = bands.length ? bands.map((b) => b.letter) : GRADE_POINT_ORDER
-    const extra = Object.keys(distribution).filter((k) => !base.includes(k))
-    const rank = (k) => {
-      const band = bands.find((b) => b.letter === k)
-      return band ? Number(band.points) : 99
-    }
-    return [...base, ...extra].sort((a, b) => rank(a) - rank(b))
-  }, [bands, distribution])
-  const maxGrade = Math.max(...gradeOrder.map((key) => distribution[key] || 0), 1)
 
   return (
     <div>
