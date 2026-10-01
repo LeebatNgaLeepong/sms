@@ -200,7 +200,10 @@ class MessageThreadViewSet(viewsets.ModelViewSet):
     def messages(self, request, pk=None):
         """
         GET  /api/threads/{id}/messages/ : list the conversation, marking it read.
-        POST /api/threads/{id}/messages/ : send a message (body: {"body": "..."}).
+        POST /api/threads/{id}/messages/ : send an encrypted message.
+
+        Posting requires ciphertext and iv. The server never receives the
+        plaintext body, so it cannot read the conversation.
         """
         thread = self.get_object()
 
@@ -210,7 +213,9 @@ class MessageThreadViewSet(viewsets.ModelViewSet):
             message = Message.objects.create(
                 thread=thread,
                 sender=request.user,
-                body=serializer.validated_data['body'],
+                ciphertext=serializer.validated_data['ciphertext'],
+                iv=serializer.validated_data['iv'],
+                algorithm=serializer.validated_data.get('algorithm', 'AES-GCM-256'),
             )
             thread.last_message_at = message.created_at
             thread.save(update_fields=['last_message_at', 'updated_at'])

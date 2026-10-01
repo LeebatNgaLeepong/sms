@@ -4,6 +4,15 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import { IconSearch, IconPlus, IconSend, IconBack } from '../components/Icons'
+import {
+  clearKeyCache,
+  decryptMessage,
+  encryptMessage,
+  ensureKeyPair,
+  isEncryptionSupported,
+} from '../lib/crypto'
+
+const LOCKED_TEXT = 'Encrypted message — cannot be decrypted on this device'
 
 function formatTime(value) {
   if (!value) return ''
@@ -38,6 +47,39 @@ export default function MessagesPage() {
   const bottomRef = useRef(null)
   const active = threads.find((t) => t.id === activeId) || null
 
+  // Peers' public keys, keyed by user id. Only public material is ever held.
+  const [peerKeys, setPeerKeys] = useState({})
+  const [e2eeReady, setE2eeReady] = useState(false)
+
+  const supported = isEncryptionSupported()
+
+  // The other participant's user id, needed to look up their public key.
+  const peerUserIdFor = useCallback(
+    (thread) => (isStudent ? thread.teacher : thread.student_user_id),
+    [isStudent]
+  )
+
+  // Publish our public key, then load the peers we might talk to.
+  const bootstrapKeys = useCallback(async () => {
+    if (!supported) return
+    try {
+      const { publicKeyB64, algorithm } = await ensureKeyPair(user?.id)
+      await api.put('/encryption-keys/me/', { public_key: publicKeyB64, algorithm })
+      const res = await api.get('/encryption-keys/')
+      const map = {}
+      for (const k of res.data || []) map[k.user_id] = k.public_key
+      setPeerKeys(map)
+      setE2eeReady(true)
+    } catch (err) {
+      console.error('Encryption key bootstrap error:', err)
+      addToast('Encryption is not set up on this device', 'error')
+    }
+  }, [supported, user?.id, addToast])
+
+  useEffect(() => {
+    bootstrapKeys()
+  }, [bootstrapKeys])
+
   const fetchThreads = useCallback(async () => {
     setLoading(true)
     try {
@@ -61,8 +103,20 @@ export default function MessagesPage() {
     setMessages([])
     try {
       const res = await api.get(`/threads/${id}/messages/`)
-      setMessages(res.data.messages || [])
-      // Refresh the list so the unread badge clears.
+      const thread = res.data.thread
+      const peerKey = peerKeys[peerUserIdFor(thread)]
+      if (!peerKey) {
+        setMessages(res.data.messages || [])
+      } else {
+        // Decrypt locally. Anything unreadable is labelled, never guessed at.
+        const opened = await Promise.all(
+          (res.data.messages || []).map(async (m) => {
+            const text = await decryptMessage(thread.id, peerKey, m.ciphertext, m.iv)
+            return { ...m, text: text ?? LOCKED_TEXT, decrypted: text !== null }
+          })
+        )
+        setMessages(opened)
+      }
       fetchThreads()
     } catch (err) {
       addToast('Could not open that conversation', 'error')
@@ -70,7 +124,7 @@ export default function MessagesPage() {
     } finally {
       setLoadingThread(false)
     }
-  }, [fetchThreads, addToast])
+  }, [fetchThreads, addToast, peerKeys, peerUserIdFor])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -80,14 +134,34 @@ export default function MessagesPage() {
     e?.preventDefault()
     const body = draft.trim()
     if (!body || !activeId) return
+    if (!active) return
+    if (!supported) {
+      addToast('This browser cannot encrypt messages', 'error')
+      return
+    }
+
+    const peerKey = peerKeys[peerUserIdFor(active)]
+    if (!peerKey) {
+      addToast(
+        'No public key for this person yet. They need to open Messages once first.',
+        'error'
+      )
+      return
+    }
+
     setSending(true)
     try {
-      const res = await api.post(`/threads/${activeId}/messages/`, { body })
-      setMessages((prev) => [...prev, res.data])
+      // Encrypted here, before it leaves the browser.
+      const payload = await encryptMessage(active.id, peerKey, body)
+      const res = await api.post(`/threads/${active.id}/messages/`, payload)
+      setMessages((prev) => [...prev, { ...res.data, text: body, decrypted: true }])
       setDraft('')
       fetchThreads()
     } catch (err) {
-      addToast(err.response?.data?.body?.[0] || 'Message not sent', 'error')
+      addToast(
+        err.response?.data?.ciphertext?.[0] || 'Message not sent',
+        'error'
+      )
     } finally {
       setSending(false)
     }
@@ -144,6 +218,30 @@ export default function MessagesPage() {
       (t.subject_code || '').toLowerCase().includes(q)
     )
   })
+
+  // Previews are ciphertext on the server too, so decrypt each one locally.
+  const [previews, setPreviews] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      const next = {}
+      for (const t of threads) {
+        const last = t.last_message
+        if (!last) continue
+        const peerKey = peerKeys[peerUserIdFor(t)]
+        const text = peerKey
+          ? await decryptMessage(t.id, peerKey, last.ciphertext, last.iv)
+          : null
+        next[t.id] = text ?? LOCKED_TEXT
+      }
+      if (!cancelled) setPreviews(next)
+    }
+    if (threads.length) run()
+    return () => {
+      cancelled = true
+    }
+  }, [threads, peerKeys, peerUserIdFor])
 
   if (isAdmin) {
     return (
@@ -220,7 +318,7 @@ export default function MessagesPage() {
                     : 'your teacher'}
                 </div>
                 <div className="thread-item-preview">
-                  {t.last_message ? t.last_message.body : 'No messages yet'}
+                  {t.last_message ? previews[t.id] || 'Decrypting...' : 'No messages yet'}
                 </div>
                 <div className="thread-item-time">
                   {formatTime(t.last_message_at || t.created_at)}
@@ -265,8 +363,14 @@ export default function MessagesPage() {
                       key={m.id}
                       className={`bubble-row ${m.sender === user?.id ? 'mine' : 'theirs'}`}
                     >
-                      <div className="bubble">
-                        <div className="bubble-body">{m.body}</div>
+                      <div className={`bubble ${m.decrypted === false ? 'locked' : ''}`}>
+                        <div className="bubble-body">
+                          {m.decrypted === false ? (
+                            <span className="bubble-locked">{m.text}</span>
+                          ) : (
+                            m.text
+                          )}
+                        </div>
                         <div className="bubble-time">{formatTime(m.created_at)}</div>
                       </div>
                     </div>
@@ -276,19 +380,28 @@ export default function MessagesPage() {
               </div>
 
               <form className="thread-composer" onSubmit={sendMessage}>
+                {!supported && (
+                  <div className="thread-composer-warn">
+                    This browser cannot encrypt messages, so sending is disabled.
+                  </div>
+                )}
                 <input
                   className="form-input"
-                  placeholder="Write a message..."
+                  placeholder={
+                    supported ? 'Write an encrypted message...' : 'Encryption unavailable'
+                  }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   maxLength={5000}
+                  disabled={!supported || !e2eeReady}
                   id="message-input"
                 />
                 <button
                   className="btn btn-primary"
                   type="submit"
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || !draft.trim() || !supported || !e2eeReady}
                   id="send-message-btn"
+                  title="Encrypted in this browser before sending"
                 >
                   {sending ? <span className="spinner" /> : <IconSend />} Send
                 </button>

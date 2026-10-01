@@ -251,9 +251,41 @@ class MessageThread(models.Model):
         return f"{self.student_id} <-> {self.teacher.username}"
 
 
+class EncryptionKey(models.Model):
+    """
+    A user's public key for end-to-end encrypted messaging.
+
+    Only the public half is stored here. The private key never leaves the
+    browser that generated it, which is what lets the server relay ciphertext it
+    cannot read.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='encryption_key',
+    )
+    public_key = models.TextField(
+        help_text='Base64 raw public key, generated in the browser with Web Crypto.',
+    )
+    algorithm = models.CharField(
+        max_length=50,
+        default='ECDH-P256-HKDF-SHA256-AESGCM',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"key:{self.user.username}"
+
+
 class Message(models.Model):
     """
     A single message inside a thread.
+
+    Only ciphertext is stored: the body is encrypted in the browser with a key
+    derived from the two participants' public keys, so the server never holds
+    the plaintext.
     """
 
     thread = models.ForeignKey(
@@ -266,7 +298,29 @@ class Message(models.Model):
         on_delete=models.CASCADE,
         related_name='sent_messages',
     )
-    body = models.TextField()
+    body = models.TextField(
+        blank=True,
+        default='',
+        help_text=(
+            'Deprecated. Messages are stored as ciphertext; use ciphertext and iv. '
+            'Kept only so older rows can still be rendered.'
+        ),
+    )
+    ciphertext = models.TextField(
+        blank=True,
+        default='',
+        help_text='Base64 AES-GCM ciphertext of the message body.',
+    )
+    iv = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text='Base64 initialisation vector used for this message.',
+    )
+    algorithm = models.CharField(
+        max_length=50,
+        default='AES-GCM-256',
+    )
     read_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -278,4 +332,4 @@ class Message(models.Model):
         ordering = ['created_at']
 
     def __str__(self) -> str:
-        return f"{self.sender.username}: {self.body[:40]}"
+        return f"{self.sender.username}: [encrypted]"

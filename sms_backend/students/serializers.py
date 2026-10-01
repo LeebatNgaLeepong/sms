@@ -5,6 +5,8 @@ Serializers for students app.
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+import base64
+
 from schedules.terms import InvalidTerm, resolve_term
 from .models import EnrollmentRequest, Message, MessageThread, Student
 
@@ -205,11 +207,13 @@ class EnrollmentRequestSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     """
-    A single message in a thread.
+    A single encrypted message in a thread.
+
+    Only the ciphertext is exposed. There is no plaintext field to read.
     """
 
     sender_name = serializers.SerializerMethodField(read_only=True)
-    sender_role = serializers.SerializerMethodField(read_only=True)
+    sender_role = serializers.CharField(source='sender.role', read_only=True)
 
     class Meta:
         model = Message
@@ -219,24 +223,20 @@ class MessageSerializer(serializers.ModelSerializer):
             'sender',
             'sender_name',
             'sender_role',
-            'body',
+            'ciphertext',
+            'iv',
+            'algorithm',
             'read_at',
             'created_at',
         ]
-        read_only_fields = ['id', 'thread', 'sender', 'read_at', 'created_at']
+        read_only_fields = [
+            'id', 'thread', 'sender', 'ciphertext', 'iv', 'algorithm',
+            'read_at', 'created_at',
+        ]
 
     def get_sender_name(self, obj) -> str:
         full = obj.sender.get_full_name()
         return full or obj.sender.username
-
-    def get_sender_role(self, obj) -> str:
-        return obj.sender.role
-
-    def validate_body(self, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise serializers.ValidationError('Message cannot be empty.')
-        return value
 
 
 class MessageThreadSerializer(serializers.ModelSerializer):
@@ -245,6 +245,7 @@ class MessageThreadSerializer(serializers.ModelSerializer):
     """
 
     student_id = serializers.CharField(source='student.id', read_only=True)
+    student_user_id = serializers.IntegerField(source='student.user_id', read_only=True)
     student_name = serializers.CharField(source='student.name', read_only=True)
     student_program = serializers.CharField(source='student.program', read_only=True)
     teacher_username = serializers.CharField(source='teacher.username', read_only=True)
@@ -264,6 +265,7 @@ class MessageThreadSerializer(serializers.ModelSerializer):
             'id',
             'student',
             'student_id',
+            'student_user_id',
             'student_name',
             'student_program',
             'teacher',
@@ -320,8 +322,11 @@ class MessageThreadSerializer(serializers.ModelSerializer):
         last = obj.messages.order_by('-created_at').first()
         if not last:
             return None
+        # Ciphertext only: the client decrypts the preview locally.
         return {
-            'body': last.body,
+            'ciphertext': last.ciphertext,
+            'iv': last.iv,
+            'algorithm': last.algorithm,
             'sender': last.sender.username,
             'created_at': last.created_at,
         }
@@ -405,14 +410,36 @@ class StartThreadSerializer(serializers.Serializer):
 
 
 class SendMessageSerializer(serializers.Serializer):
-    """Post a message into an existing thread."""
+    """
+    Post an encrypted message into an existing thread.
 
-    body = serializers.CharField(trim_whitespace=True)
+    The client sends ciphertext, never the plaintext body, so the server stores
+    something it cannot read.
+    """
 
-    def validate_body(self, value):
+    ciphertext = serializers.CharField(trim_whitespace=True)
+    iv = serializers.CharField(trim_whitespace=True, max_length=64)
+    algorithm = serializers.CharField(required=False, default='AES-GCM-256')
+
+    def validate_ciphertext(self, value):
         value = value.strip()
         if not value:
-            raise serializers.ValidationError('Message cannot be empty.')
-        if len(value) > 5000:
+            raise serializers.ValidationError('Ciphertext is required.')
+        if len(value) > 20000:
             raise serializers.ValidationError('Message is too long.')
+        try:
+            base64.b64decode(value, validate=True)
+        except Exception:
+            raise serializers.ValidationError('Ciphertext must be base64.')
+        return value
+
+    def validate_iv(self, value):
+        value = value.strip()
+        try:
+            raw = base64.b64decode(value, validate=True)
+        except Exception:
+            raise serializers.ValidationError('The IV must be base64.')
+        # AES-GCM uses a 12-byte nonce.
+        if len(raw) != 12:
+            raise serializers.ValidationError('AES-GCM needs a 12 byte IV.')
         return value

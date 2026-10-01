@@ -3,6 +3,7 @@ Tests for students app.
 Verifies auto ID generation, GPA computation, and role-based permissions.
 """
 
+import base64
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -12,7 +13,12 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from grades.models import Grade
-from students.models import EnrollmentRequest, Student
+from students.models import (
+    EnrollmentRequest,
+    Message,
+    MessageThread,
+    Student,
+)
 from subjects.models import Subject
 
 User = get_user_model()
@@ -118,6 +124,132 @@ class StudentAPITests(APITestCase):
     def test_gpa_returns_5_when_no_grades(self):
         """Students with no grades should have GPA of 5.00 (fail) on Antique scale."""
         self.assertEqual(self.student2.gpa, 5.00)
+
+
+class EndToEndEncryptionTests(APITestCase):
+    """
+    The server stores ciphertext only, so it cannot read a conversation.
+
+    These tests check the server's guarantees. They do not and cannot test the
+    browser's crypto; they verify that plaintext is never accepted, never
+    stored, and never returned.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='e2e_admin', email='e2e_admin@t.com', password='pw'
+        )
+        self.teacher = User.objects.create_user(
+            username='e2e_teacher', email='e2e_teacher@t.com', password='pw',
+            role=User.ROLE_TEACHER,
+        )
+        self.student_user = User.objects.create_user(
+            username='e2e_student', email='e2e_student@t.com', password='pw',
+            role=User.ROLE_STUDENT,
+        )
+        self.student = Student.objects.create(
+            user=self.student_user, name='E2E Student', email='e2e_student@t.com',
+            program='BS CS', year_level='2nd Year',
+        )
+        self.thread = MessageThread.objects.create(student=self.student, teacher=self.teacher)
+        # A stand-in for real browser output: base64 ciphertext plus a 12 byte IV.
+        self.ciphertext = base64.b64encode(b'ENCRYPTED-BYTES-NOT-PLAINTEXT').decode()
+        self.iv = base64.b64encode(b'0123456789ab').decode()
+
+    def _post(self, user, **extra):
+        payload = {'ciphertext': self.ciphertext, 'iv': self.iv}
+        payload.update(extra)
+        self.client.force_authenticate(user=user)
+        return self.client.post(
+            reverse('thread-messages', kwargs={'pk': self.thread.id}),
+            payload,
+            format='json',
+        )
+
+    def test_plaintext_body_field_is_rejected(self):
+        """A plaintext body must not be accepted; only ciphertext is."""
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.post(
+            reverse('thread-messages', kwargs={'pk': self.thread.id}),
+            {'body': 'plain text here'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_message_is_stored_as_ciphertext_only(self):
+        res = self._post(self.student_user)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        message = Message.objects.get(pk=res.data['id'])
+        self.assertEqual(message.ciphertext, self.ciphertext)
+        self.assertEqual(message.body, '', 'no plaintext may be persisted')
+
+    def test_reading_returns_no_plaintext_field(self):
+        self._post(self.student_user)
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.get(reverse('thread-messages', kwargs={'pk': self.thread.id}))
+        payload = res.data['messages'][0]
+        self.assertNotIn('body', payload)
+        self.assertEqual(payload['ciphertext'], self.ciphertext)
+
+    def test_thread_preview_is_ciphertext_only(self):
+        self._post(self.student_user)
+        self.client.force_authenticate(user=self.student_user)
+        res = self.client.get(reverse('thread-list'))
+        preview = res.data['results'][0]['last_message']
+        self.assertNotIn('body', preview)
+        self.assertEqual(preview['ciphertext'], self.ciphertext)
+
+    def test_iv_must_be_twelve_bytes(self):
+        bad_iv = base64.b64encode(b'short').decode()
+        res = self._post(self.student_user, iv=bad_iv)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('iv', res.data)
+
+    def test_ciphertext_must_be_base64(self):
+        res = self._post(self.student_user, ciphertext='not base64 !!')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('ciphertext', res.data)
+
+    def test_publish_and_read_public_key(self):
+        public_key = base64.b64encode(b'\x04' + b'\x00' * 64).decode()
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.put(
+            reverse('encryption-key-me'), {'public_key': public_key}, format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        self.client.force_authenticate(user=self.student_user)
+        peers = self.client.get(reverse('encryption-key-list'))
+        self.assertEqual(peers.data[0]['public_key'], public_key)
+        self.assertEqual(peers.data[0]['user_id'], self.teacher.id)
+
+    def test_invalid_public_key_rejected(self):
+        self.client.force_authenticate(user=self.teacher)
+        for bad in ['', 'not base64!!', base64.b64encode(b'tiny').decode()]:
+            res = self.client.put(
+                reverse('encryption-key-me'), {'public_key': bad}, format='json'
+            )
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, bad)
+
+    def test_admin_can_read_ciphertext_but_not_plaintext(self):
+        """Oversight still sees that a message exists, never what it says."""
+        self._post(self.student_user)
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('thread-messages', kwargs={'pk': self.thread.id}))
+        payload = res.data['messages'][0]
+        self.assertEqual(payload['ciphertext'], self.ciphertext)
+        self.assertNotIn('body', payload)
+
+    def test_admin_cannot_post_into_a_conversation(self):
+        res = self._post(self.admin)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_string_repr_never_leaks_content(self):
+        self._post(self.student_user)
+        message = Message.objects.get(pk=Message.objects.first().pk)
+        self.assertNotIn(self.ciphertext, str(message))
+        self.assertIn('encrypted', str(message))
 
 
 class EnrollmentRequestTests(APITestCase):
@@ -343,7 +475,22 @@ class EnrollmentRequestTests(APITestCase):
 class MessageThreadTests(APITestCase):
     """
     Students and teachers can message each other, and nobody else.
+
+    These exercise the threading rules. The payload stands in for what the
+    browser produces; EndToEndEncryptionTests covers the encryption itself.
     """
+
+    # Stand-in for browser output: base64 ciphertext and a 12 byte IV.
+    CIPHERTEXT = base64.b64encode(b'CIPHERTEXT-NOT-PLAINTEXT').decode()
+    IV = base64.b64encode(b'0123456789ab').decode()
+
+    def _send(self, thread_id, user, ciphertext=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(
+            reverse('thread-messages', kwargs={'pk': thread_id}),
+            {'ciphertext': ciphertext or self.CIPHERTEXT, 'iv': self.IV},
+            format='json',
+        )
 
     def setUp(self):
         self.admin = User.objects.create_superuser(
@@ -423,33 +570,28 @@ class MessageThreadTests(APITestCase):
         thread_id = self._start_as_student().data['id']
 
         self.client.force_authenticate(user=self.student_user)
-        self.client.post(
-            reverse('thread-messages', kwargs={'pk': thread_id}),
-            {'body': 'May I join CS101?'},
-            format='json',
-        )
-
-        self.client.force_authenticate(user=self.teacher)
-        res = self.client.post(
-            reverse('thread-messages', kwargs={'pk': thread_id}),
-            {'body': 'Yes, fill out the form.'},
-            format='json',
-        )
-        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self._send(thread_id, self.student_user)
+        self._send(thread_id, self.teacher)
 
         thread = self.client.get(reverse('thread-messages', kwargs={'pk': thread_id}))
-        bodies = [m['body'] for m in thread.data['messages']]
-        self.assertEqual(bodies, ['May I join CS101?', 'Yes, fill out the form.'])
+        self.assertEqual(len(thread.data['messages']), 2)
+        self.assertNotIn('body', thread.data['messages'][0])
+        # Reading as the teacher clears the student's unread message.
+        self.assertEqual(self.client.get(
+            reverse('thread-list')
+        ).data['results'][0]['unread_count'], 0)
 
-    def test_empty_message_is_rejected(self):
+    def test_missing_ciphertext_is_rejected(self):
+        """A message with no ciphertext cannot be stored."""
         thread_id = self._start_as_student().data['id']
         self.client.force_authenticate(user=self.student_user)
         res = self.client.post(
             reverse('thread-messages', kwargs={'pk': thread_id}),
-            {'body': '   '},
+            {'iv': self.IV},
             format='json',
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('ciphertext', res.data)
 
     def test_unrelated_teacher_cannot_read_thread(self):
         """404 is correct: an unrelated teacher must not learn the thread exists."""
@@ -460,12 +602,7 @@ class MessageThreadTests(APITestCase):
 
     def test_unread_count_and_mark_as_read(self):
         thread_id = self._start_as_student().data['id']
-        self.client.force_authenticate(user=self.student_user)
-        self.client.post(
-            reverse('thread-messages', kwargs={'pk': thread_id}),
-            {'body': 'Hello'},
-            format='json',
-        )
+        self._send(thread_id, self.student_user)
 
         # The teacher has one unread message from the student.
         self.client.force_authenticate(user=self.teacher)

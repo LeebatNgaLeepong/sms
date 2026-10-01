@@ -1558,6 +1558,25 @@ table {
   word-break: break-word;
 }
 
+.bubble.locked {
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-300);
+  border-style: dashed;
+}
+
+.bubble-locked {
+  color: var(--color-gray-500);
+  font-style: italic;
+  font-size: var(--font-xs);
+}
+
+.thread-composer-warn {
+  width: 100%;
+  font-size: var(--font-xs);
+  color: var(--color-error);
+  margin-bottom: var(--space-2);
+}
+
 .bubble-time {
   font-size: 0.6875rem;
   color: var(--color-gray-400);
